@@ -16,15 +16,11 @@ UDS or Zarf CLI already on your PATH. The report catalog is source-audited for
 **UDS 0.40.0 / Zarf 0.88.0**; other versions are best-effort, not certified.
 
 ```sh
-git clone --branch v0.1.0-preview.4 https://github.com/codydacosta-uds/uds-deploy-ui.git
+git clone https://github.com/codydacosta-uds/uds-deploy-ui.git
 cd uds-deploy-ui
 ./uds-watch doctor
 ./uds-watch
 ```
-
-This initial public preview is pinned to a version tag; cloning it checks out
-that tested version in detached-HEAD mode. The repository's default branch is
-not initialized or changed by this preview.
 
 The last command opens your browser. Leave that terminal running; Ctrl+C stops
 **only the viewer**, never your deployment. Use `--no-browser` to print its
