@@ -32,11 +32,11 @@ async function until(test,message,timeout=25000){const deadline=Date.now()+timeo
   assert.equal(await page.locator('[data-status-package]').first().getAttribute('data-package-status'),'succeeded','Positive final action and CLI advancement permit the documented green inferred result');
   await card.getByRole('button',{name:'Inspect watcher-journey / prepare',exact:true}).click();assert.equal(await card.locator('.component-execution:visible .stock-job').first().getAttribute('data-step-status'),'succeeded');
   const response=await page.request.get(new URL('api/deployments/'+encodeURIComponent(source.run)+'/logs?download=1',event.url).href);assert.equal(response.status(),200);
-  assert.ok((await response.body()).equals(fs.readFileSync(manifest.terminal)),'End-to-end download must exactly match the original deployment terminal');
+  assert.ok((await response.body()).equals(fs.readFileSync(manifest.terminal)),'End-to-end download must exactly match the original native CLI output');
   assert.ok((await response.body()).includes(Buffer.from('JOURNEY stdout')));assert.ok((await response.body()).includes(Buffer.from('JOURNEY stderr')));
   await page.screenshot({path:path.join(manifest.evidence,manifest.shell+'-03-finished-dark.png'),fullPage:true});
   assert.deepEqual(errors,[]);assert.deepEqual(writes,[]);
-  fs.writeFileSync(path.join(manifest.evidence,manifest.shell+'-result.json'),JSON.stringify({cli_browser_handoff_verified:true,browser_launched_by_playwright:true,os_default_browser_tested:false,deploy_started_before_viewer:true,late_attach_full_output:true,live_transition:true,native_exit:0,download_byte_exact:true,read_only:true},null,2));
-  console.log('Deploy-first user journey passed ('+manifest.shell+'): CLI browser handoff recorded, normal Playwright launch, actual NativeReader late-attached, live steps advanced, completed state and original bytes matched. Evidence: '+manifest.evidence);
+  fs.writeFileSync(path.join(manifest.evidence,manifest.shell+'-result.json'),JSON.stringify({capture_mode:manifest.capture_mode||'hook',cli_browser_handoff_verified:true,browser_launched_by_playwright:true,os_default_browser_tested:false,deploy_started_before_viewer:true,late_attach_full_output:true,live_transition:true,native_exit:0,download_byte_exact:true,read_only:true},null,2));
+  console.log('Deploy-first user journey passed ('+manifest.shell+', '+(manifest.capture_mode||'hook')+'): CLI browser handoff recorded, normal Playwright launch, actual NativeReader late-attached, live steps advanced, completed state and original bytes matched. Evidence: '+manifest.evidence);
  }finally{if(browser)await browser.close();}
 })().catch(error=>{console.error(error.message.replace(/http:\/\/127\.0\.0\.1:\d+\/[^\s'\"]+/g,'[private local URL]'));process.exitCode=1;});

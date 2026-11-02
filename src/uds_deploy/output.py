@@ -1,4 +1,4 @@
-# Standalone adaptation of Apache-2.0 watcher code; see NOTICE.
+# Shared output-only capture protocol for standalone and integrated viewers.
 """Output-only task tee. Never launches, signals, schedules, or retries a deploy."""
 import json
 import os
@@ -13,7 +13,33 @@ import tempfile
 
 def output_home():
     override=os.environ.get('UDS_DEPLOY_RUNTIME_DIR')
-    return Path(override)/'output' if override else Path(tempfile.gettempdir())/('uds-watch-output-'+str(os.getuid()))
+    return Path(override)/'output' if override else Path(tempfile.gettempdir())/('sonic-deploy-output-'+str(os.getuid()))
+
+
+def capture_homes():
+    """Read known capture namespaces without changing where this helper writes."""
+    home=output_home()
+    if os.environ.get('UDS_DEPLOY_RUNTIME_DIR'):return [home]
+    return [home,Path(tempfile.gettempdir())/('uds-watch-output-'+str(os.getuid()))]
+
+
+def capture_helper(args):
+    # Identity alone is not authorization: below we also validate same-user
+    # ancestry, private files, held log descriptor, and (in NativeReader) pipes.
+    scripts=any(Path(arg).name=='deploy-output.py' or Path(arg).name=='capture.py' and Path(arg).parent.name=='uds_deploy' for arg in args[1:])
+    entrypoint=any(Path(arg).name=='uds-watch' and args[i+1:i+2]==['capture'] for i,arg in enumerate(args))
+    return scripts or entrypoint
+
+
+def pipe_identity(record):
+    inode=record.get('inode')
+    if inode and inode!='0':return ('inode',inode)
+    path=record.get('path')
+    device=record.get('device','')
+    if device.startswith('0x') and path and path.startswith('->0x'):
+        try:return ('peers',tuple(sorted((int(device,16),int(path[2:],16)))))
+        except ValueError:return None
+    return ('path',path) if path and path not in ('pipe','FIFO') else None
 
 
 def open_capture():
@@ -48,9 +74,14 @@ def open_capture():
 
 def active_capture(deploy_pid,open_files):
     """Validate a live sibling tee and its held private log, without pipe reads."""
-    home=output_home()
-    if home.is_symlink():return None
-    if home.exists() and (home.stat().st_uid!=os.getuid() or stat.S_IMODE(home.stat().st_mode)&0o077):return None
+    homes=[]
+    for home in capture_homes():
+        try:
+            if home.is_symlink():continue
+            if home.exists() and (home.stat().st_uid!=os.getuid() or stat.S_IMODE(home.stat().st_mode)&0o077):continue
+            homes.append(home)
+        except OSError:continue
+    if not homes:return None
     rows={}
     output=subprocess.check_output(['ps','-axo','pid=,ppid=,uid=,args='],timeout=3).decode('utf-8',errors='replace')
     for line in output.splitlines():
@@ -59,9 +90,13 @@ def active_capture(deploy_pid,open_files):
     deploy=rows.get(deploy_pid)
     if not deploy:return None
     parent=int(deploy[1]);uid=str(os.getuid());matches=[]
+    pipes=[row for row in open_files(deploy_pid) if row.get('fd') in ('1','2') and row.get('type') in ('PIPE','FIFO')]
+    identities={pipe_identity(row) for row in pipes}
+    if {row['fd'] for row in pipes}!={'1','2'} or None in identities or len(identities)!=1:return None
+    pipe=next(iter(identities))
     def sibling(owner):
         return owner==parent or owner in rows and rows[owner][2]==uid and int(rows[owner][1])==parent
-    for record in home.glob('*/capture.json'):
+    for record in [record for home in homes for record in home.glob('*/capture.json')]:
         try:
             if record.is_symlink() or record.parent.is_symlink() or record.stat().st_uid!=os.getuid() or stat.S_IMODE(record.stat().st_mode)&0o077:continue
             data=json.loads(record.read_text());pid=data['pid'];shell=data['shell_pid']
@@ -69,11 +104,11 @@ def active_capture(deploy_pid,open_files):
             helper=rows.get(pid)
             if not helper or helper[2]!=uid or int(helper[1])!=shell:continue
             args=shlex.split(helper[3])
-            if not any(Path(arg).resolve()==Path(__file__).with_name('capture.py').resolve() for arg in args):continue
+            if not capture_helper(args):continue
             path=record.parent/'console.log'
             if path.is_symlink() or path.stat().st_uid!=os.getuid() or not path.is_file() or stat.S_IMODE(path.stat().st_mode)&0o077:continue
             files=open_files(pid)
-            if not any(r.get('fd')=='0' and r.get('type') in ('PIPE','FIFO') for r in files):continue
+            if not any(r.get('fd')=='0' and r.get('type') in ('PIPE','FIFO') and pipe_identity(r)==pipe for r in files):continue
             if not any(r.get('type')=='REG' and Path(r.get('path','')).resolve()==path.resolve() for r in files):continue
             matches.append(dict(path=path,pid=pid,record=record))
         except (OSError,ValueError,KeyError,TypeError):continue
@@ -82,7 +117,7 @@ def active_capture(deploy_pid,open_files):
     # Defer observation, not execution, rather than locking onto a partial log.
     for pid,row in rows.items():
         try:
-            if row[2]==uid and sibling(int(row[1])) and any(Path(a).resolve()==Path(__file__).with_name('capture.py').resolve() for a in shlex.split(row[3])):return {'pending':True}
+            if row[2]==uid and sibling(int(row[1])) and capture_helper(shlex.split(row[3])):return {'pending':True}
         except ValueError:pass
     return None
 

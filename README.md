@@ -105,6 +105,19 @@ For scripts or existing deployment tasks, an output-only stdin tee is available
 as `uds-watch capture`. The caller must preserve the native CLI's pipeline exit
 status; the interactive shell hook handles that automatically.
 
+For `uds run` deployments, the task must already include an output-only tee;
+SONIC's instrumented deployment tasks provide this. The standalone shell hook
+wraps direct deploy commands, not arbitrary `uds run` tasks. You can start the
+viewer after the deployment begins, provided capture was active at command start.
+Uncaptured terminal output cannot be recovered retroactively.
+
+SONIC and standalone use the same per-user, host-local capture directory and
+identical `uds_deploy/output.py` protocol, pinned by `capture-protocol.json`.
+Readers also accept the earlier standalone directory without migrating or deleting
+its files. An explicit `UDS_DEPLOY_RUNTIME_DIR` is respected without searching
+other namespaces. Ownership, private permissions, helper ancestry, held file and
+matching pipe identities are checked before a capture is read.
+
 ## What the watcher does—and does not do
 
 - Observes same-user UDS/Zarf process metadata and supported local `.tar.zst`
@@ -202,6 +215,15 @@ log downloads in both Bash and zsh. Browser handoff is recorded without opening
 an OS browser; the page is opened with normal Playwright launch and its default
 safety flags. It does not verify your OS's default-browser integration or touch
 its settings. No real cluster/application rollout is involved.
+
+To exercise SONIC task capture instead of the standalone shell hook, add
+`UDS_JOURNEY_CAPTURE_MODE=sonic-task` and
+`UDS_SONIC_TEST_HELPER=/path/to/sonic-checkout/scripts/deploy-output.py` to the
+journey command above. It runs an isolated action-only `uds run` task using that
+actual output helper, with the default shared capture namespace and no prior
+viewer or shell-hook setup. The viewer starts only after the native action is
+running. Its download is compared byte-for-byte against an independently held
+capture descriptor (the outer task console may add its own status messages).
 
 To visually check a genuinely empty viewer (with no running deployment):
 

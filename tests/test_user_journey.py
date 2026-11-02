@@ -31,6 +31,9 @@ class UserJourneyTests(unittest.TestCase):
     def test_deploy_first_then_watch_opens_the_ui(self):
         uds=os.environ.get('UDS_TEST_BINARY') or shutil.which('uds');self.assertTrue(uds)
         playwright=os.environ.get('PLAYWRIGHT_MODULE','playwright')
+        sonic=os.environ.get('UDS_JOURNEY_CAPTURE_MODE')=='sonic-task'
+        helper=Path(os.environ.get('UDS_SONIC_TEST_HELPER',''))
+        if sonic:self.assertTrue(helper.is_file(),'Supply UDS_SONIC_TEST_HELPER from the SONIC checkout; no production task is run')
         evidence=Path(tempfile.mkdtemp(prefix='uds-user-journey-evidence-'))
         for shell in ('bash','zsh'):
             shell_bin=shutil.which(shell)
@@ -39,6 +42,8 @@ class UserJourneyTests(unittest.TestCase):
                 root=Path(directory);(root/'home').mkdir();(root/'bin').mkdir();(root/'bin/uds').symlink_to(uds);artifacts=root/'artifacts';artifacts.mkdir()
                 env={key:value for key,value in os.environ.items() if key in ('PATH','TMPDIR','LANG','LC_ALL')}
                 env.update(HOME=str(root/'home'),PATH=str(root/'bin')+os.pathsep+env['PATH'],UDS_DEPLOY_RUNTIME_DIR=str(root/'runtime'),UDS_CONFIG=str(root/'uds-config.yaml'),KUBECONFIG=str(root/'kubeconfig.json'),PLAYWRIGHT_MODULE=playwright)
+                if sonic:
+                    (root/'tmp').mkdir();env['TMPDIR']=str(root/'tmp');env.pop('UDS_DEPLOY_RUNTIME_DIR')
                 (root/'uds-config.yaml').write_text('{}');(root/'kubeconfig.json').write_text(json.dumps({'apiVersion':'v1','kind':'Config','clusters':[],'contexts':[],'users':[],'current-context':''}))
                 started=root/'prepare-started';release_prepare=root/'release-prepare';release_verify=root/'release-verify'
                 def action(name,release):
@@ -54,12 +59,18 @@ class UserJourneyTests(unittest.TestCase):
                 run([uds,'create',str(root),'-a','amd64','--confirm','--output',str(artifacts)])
                 bundle=next(artifacts.glob('uds-bundle-*.tar.zst'));startup=root/'startup'
                 # One-time setup has already been accepted before this journey.
-                run([str(ROOT/'uds-watch'),'setup','--yes','--shell',shell,'--tool','uds','--rc-file',str(startup)])
+                if not sonic:run([str(ROOT/'uds-watch'),'setup','--yes','--shell',shell,'--tool','uds','--rc-file',str(startup)])
                 args=['--log-level','info','deploy',str(bundle),'-a','amd64','--confirm','--no-progress','--skip-signature-validation']
-                terminal=root/'terminal.log';viewer_log=root/'viewer.log';task=viewer=driver=None;event=root/'browser-event.json'
+                launch_args=args
+                if sonic:
+                    command=shlex.join([str(root/'bin/uds')]+args)+' 2>&1 | ('+shlex.join([sys.executable,str(helper)])+' || cat); exit "${PIPESTATUS[0]}"'
+                    (root/'tasks.yaml').write_text(json.dumps({'tasks':[{'name':'deploy-probe','actions':[{'cmd':command,'shell':{'linux':'bash','darwin':'bash'}}]}]}))
+                    launch_args=['--log-level','info','--no-progress','run','deploy-probe']
+                terminal=root/'terminal.log';expected=root/'native-output.log' if sonic else terminal;gold=None
+                viewer_log=root/'viewer.log';task=viewer=driver=None;event=root/'browser-event.json'
                 try:
                     with terminal.open('wb') as console:
-                        task=subprocess.Popen([shell_bin,'-c','. "$1"; shift; uds "$@"','journey',str(startup)]+args,cwd=root,env=env,stdin=subprocess.DEVNULL,stdout=console,stderr=subprocess.STDOUT,start_new_session=True)
+                        task=subprocess.Popen([shell_bin,'-c',('shift; command uds "$@"' if sonic else '. "$1"; shift; uds "$@"'),'journey',str(startup)]+launch_args,cwd=root,env=env,stdin=subprocess.DEVNULL,stdout=console,stderr=subprocess.STDOUT,start_new_session=True)
                     deadline=time.monotonic()+20
                     while not started.exists():
                         self.assertIsNone(task.poll(),'Native deployment ended before its first gated action');self.assertLess(time.monotonic(),deadline,'Native action readiness timed out');time.sleep(.03)
@@ -71,12 +82,17 @@ class UserJourneyTests(unittest.TestCase):
                         except ValueError:continue
                         if argv[1:]==args and Path(argv[0]).name=='uds':pid=int(fields[0]);break
                     self.assertIsNotNone(pid)
+                    if sonic:
+                        capture_home=root/'tmp'/('sonic-deploy-output-'+str(os.getuid()))
+                        records=list(capture_home.glob('*/capture.json'))
+                        self.assertEqual(len(records),1,'The actual SONIC helper must register in the shared default directory')
+                        gold=(records[0].parent/'console.log').open('rb')
                     # Native CLI is NOW already running. Start the normal viewer,
                     # Its browser request is recorded without any OS/browser launch.
                     # A foreground zero-exit recorder prevents platform-browser fallback.
                     browser_env=dict(env,UDS_JOURNEY_BROWSER_EVENT=str(event),BROWSER=shlex.quote(sys.executable)+' '+shlex.quote(str(ROOT/'tests/journey_browser_handoff.py'))+' %s')
                     manifest=root/'manifest.json';task_exit=root/'task-exit.json'
-                    private_json(manifest,dict(shell=shell,deploy_pid=pid,deploy_started_before_viewer=started.exists(),browser_event=str(event),release_prepare=str(release_prepare),release_verify=str(release_verify),task_exit=str(task_exit),terminal=str(terminal),evidence=str(evidence)))
+                    private_json(manifest,dict(shell=shell,deploy_pid=pid,deploy_started_before_viewer=started.exists(),browser_event=str(event),release_prepare=str(release_prepare),release_verify=str(release_verify),task_exit=str(task_exit),terminal=str(expected),capture_mode='sonic-task' if sonic else 'hook',evidence=str(evidence)))
                     with viewer_log.open('wb') as log:
                         viewer=subprocess.Popen([str(ROOT/'uds-watch')],cwd=root,env=browser_env,stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
                     driver_env=dict(env)
@@ -85,7 +101,9 @@ class UserJourneyTests(unittest.TestCase):
                     driver=subprocess.Popen(['node',str(ROOT/'tests/test_user_journey_browser.cjs'),str(manifest)],cwd=ROOT,env=driver_env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
                     deadline=time.monotonic()+75
                     while driver.poll() is None:
-                        if task.poll() is not None and not task_exit.exists():private_json(task_exit,{'code':task.returncode})
+                        if task.poll() is not None and not task_exit.exists():
+                            if gold is not None:gold.seek(0);expected.write_bytes(gold.read())
+                            private_json(task_exit,{'code':task.returncode})
                         self.assertIsNone(viewer.poll(),'Viewer exited before the browser journey completed')
                         self.assertLess(time.monotonic(),deadline,'Deploy-first browser journey timed out');time.sleep(.05)
                     output=driver.communicate(timeout=5)[0].decode(errors='replace')
@@ -99,6 +117,7 @@ class UserJourneyTests(unittest.TestCase):
                     release_prepare.touch();release_verify.touch()
                     if driver is not None and driver.poll() is None:driver.terminate();driver.communicate(timeout=5)
                     if viewer is not None and viewer.poll() is None:viewer.send_signal(signal.SIGINT);viewer.wait(timeout=5)
+                    if gold is not None:gold.close()
                     if task is not None and task.poll() is None:
                         # Only this explicitly owned action-only SDK process group.
                         os.killpg(task.pid,signal.SIGINT);task.wait(timeout=15)
