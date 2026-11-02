@@ -1,0 +1,16 @@
+UDS Deploy UI / UDS Watch
+
+Portions of the read-only reader, output capture, artifact views, web interface,
+and regression tests derive from the Apache-2.0-licensed deployment watcher in
+sonic-swf-iac (scripts/uds_deploy and associated tests), based on revision
+ab9ba3e9f3c25c1a7a8904a9b645b3e6cc965439 with subsequent interface refinements.
+These files have been adapted for standalone use. Deployment scheduling,
+retry execution, infrastructure configuration, and private captures are omitted.
+
+GitLab Sans and GitLab Mono are redistributed under SIL OFL 1.1. Their
+unmodified font files, copyright/license notices, and source provenance are in
+src/uds_deploy/web/fonts/.
+
+This is an independent, unofficial project. UDS, Zarf, Defense Unicorns, GitLab,
+and other product names belong to their respective owners. No official product
+logos are distributed, and no affiliation or endorsement is implied.

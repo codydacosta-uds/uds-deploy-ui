@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uds-deploy-ui"
+version = "0.1.0a1"
+description = "Local, read-only deployment watcher for UDS and Zarf"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+classifiers = ["Programming Language :: Python :: 3", "License :: OSI Approved :: Apache Software License", "Operating System :: POSIX"]
+
+[project.scripts]
+uds-watch = "uds_deploy.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+uds_deploy = ["web/*.html", "web/*.js", "web/*.css", "web/fonts/*.woff2", "web/fonts/*.txt"]

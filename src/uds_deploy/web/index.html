@@ -1,0 +1,49 @@
+<!doctype html>
+<!-- Standalone adaptation of Apache-2.0 watcher code; see NOTICE. -->
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>UDS Watch</title><script src="theme.js"></script><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="theme.css"><script src="app.js" defer></script></head>
+<body data-mode="live">
+<div class="app-shell">
+<aside class="sidebar" aria-label="Workspace navigation">
+  <div class="brand"><svg viewBox="0 0 32 32" width="25" height="25" aria-hidden="true"><path d="m16 2 12 7v14l-12 7-12-7V9Zm0 3.5L7.2 10.6 16 15.7l8.8-5.1ZM6.8 13v8.4l7.7 4.5v-8.4Zm18.4 0-7.7 4.5v8.4l7.7-4.5Z" fill="currentColor"/></svg><span>UDS Deploy</span></div>
+  <div class="workspace-label">Deployment workspace</div>
+  <nav><button id="nav-deployments" class="nav-item active" aria-current="page">Deployments</button><button id="nav-pipeline" class="nav-item" disabled>Pipeline</button></nav>
+  <div class="sidebar-footer">Local viewer<br><span>UDS bundles · Zarf packages</span></div>
+</aside>
+<div class="page-shell">
+<header class="topbar"><a class="uds-brand" href="./" aria-label="UDS deployment watcher"><span class="watch-brand">UDS Watch</span></a><div class="breadcrumbs"><button id="breadcrumb-home">Deployments</button><span id="breadcrumb-run" hidden></span></div><div id="connection" role="status">Connecting</div><button id="active-run" class="text-button" hidden>View active deployment</button><label id="history-switcher" class="history-label" hidden><select id="history" aria-label="Deployment history"><option>No deployments yet</option></select></label><button id="theme-toggle" class="theme-toggle" hidden type="button" aria-pressed="false" title="Switch to dark mode">Dark mode</button></header>
+<main>
+<div id="notice" class="notice" role="alert" hidden></div>
+<section id="deployments-page" aria-label="Deployment history">
+  <div class="page-title"><h1 id="history-title">Deployments</h1><span id="deployment-total" class="count-label"></span></div>
+  <p id="history-description" class="page-description">Tracked UDS bundle deployments on this machine.</p><div id="processes" class="processes" aria-label="Detected local deployment processes"></div>
+  <div class="history-filters"><input id="deployment-search" type="search" aria-label="Filter deployments" placeholder="Filter by bundle, target, or run ID"><select id="deployment-status" aria-label="Filter deployment status"><option value="">All statuses</option><option value="active">Running / waiting</option><option value="completed">Completed</option><option value="failed">Failed</option><option value="unknown">Unknown / interrupted</option></select></div>
+  <div class="table-scroll"><table class="deployment-table"><thead><tr><th>Status</th><th>Deployment</th><th>Target</th><th>Packages</th><th>Duration</th><th class="actions-column">Actions</th></tr></thead><tbody id="deployment-rows"></tbody></table></div>
+  <div id="history-empty" class="empty" hidden><h2>No deployments yet</h2><p>Start a tracked deployment from the terminal. Opening this viewer does not start one.</p><code>uds deploy path/to/uds-bundle.tar.zst --confirm</code></div>
+  <p id="history-note" class="table-note">Current viewer session only. Deployment starts stay in the terminal.</p>
+</section>
+<div id="empty" class="empty" hidden><h2>Loading deployment…</h2></div>
+<section id="workspace" class="workspace" hidden>
+  <section class="pipeline-overview">
+    <div class="summary"><div class="summary-title"><h1 id="bundle"></h1><span id="artifact-kind" class="hierarchy-pill">Deployment</span><strong id="run-status" class="run-status">—</strong></div><p id="target" class="target"></p><div class="run-meta"><span id="started"></span><span>Duration <strong id="elapsed">—</strong></span><span id="run-reference"></span></div><div id="overview-metrics" class="overview-metrics" aria-label="Deployment totals"></div><div class="completion"><span><strong id="count">—</strong> packages completed</span><div id="status-counts" class="status-counts"></div></div><details class="run-info"><summary>Run details</summary><span id="run-id"></span><span id="full-target"></span></details></div>
+    <div class="pipeline-heading"><div class="graph-tabs" role="tablist" aria-label="Deployment view"><button id="pipeline-tab" role="tab" aria-selected="true" aria-controls="packages" class="active">Pipeline</button><button id="jobs-tab" role="tab" aria-selected="false" aria-controls="jobs" tabindex="-1">Jobs <span id="jobs-total"></span></button></div></div>
+    <div id="group-toolbar" class="group-toolbar"><span>Group jobs by</span><div class="segmented"><button id="stage-grouping" aria-pressed="true" class="active">Bundle packages</button><button id="dependency-grouping" aria-pressed="false">Task scheduling</button></div><span id="mode" class="mode-label"></span></div>
+    <div id="invocation-notice" class="tracking-note" hidden></div>
+    <div id="packages" class="pipeline-canvas" role="tabpanel" aria-labelledby="pipeline-tab" aria-label="Package pipeline"></div><div id="jobs" class="jobs-list" role="tabpanel" aria-labelledby="jobs-tab" hidden></div>
+    <p id="graph-caption" class="graph-caption">Stage groups organize packages; job dependencies show exact prerequisite paths.</p>
+  </section>
+  <section id="job-inspector" aria-label="Selected job details" hidden>
+    <section id="selection-detail" class="execution-board"><div class="detail-header"><div><div class="eyebrow" id="detail-version"></div><h2 id="detail-name"></h2></div><div class="inspector-actions"><button id="retry" class="primary-button" hidden>Retry package</button><button id="close-inspector" aria-label="Close job details">×</button></div></div><p id="operation"></p><div id="package-meta" class="metadata"></div><p id="error" class="error" hidden></p><p id="retry-reason" class="muted"></p><div class="execution-toolbar"><label>Attempt <select id="attempt" aria-label="Deployment attempt"></select></label></div><div id="tracking-notice" class="tracking-note" hidden></div><div class="operations-heading"><h3>Component operations</h3><span>Observed starts, then expected definitions · no inferred prerequisite edges</span></div><div id="components" aria-label="Components and applicable operations"></div></section>
+    <section class="activity-panel"><div class="activity-heading"><div><h2 id="log-title">Execution events</h2><p id="log-subtitle"></p></div><div class="view-switch"><button id="activity-view" class="active">Activity</button><button id="raw-view">Raw logs</button></div><button id="close-output" aria-label="Close logs" hidden>×</button></div><div class="log-toolbar"><div class="tabs"><button id="full-view" class="active">Full deployment</button><button id="package-view">Selected package</button></div><button id="clear-scope" hidden>Clear operation filter</button></div><p id="log-scope" class="log-scope"></p><div class="output-toolbar"><div class="log-filters"><input id="log-search" type="search" placeholder="Search original output" aria-label="Search logs"><select id="log-level" aria-label="Log severity"><option value="">All levels</option><option value="error">Errors</option><option value="warning">Warnings</option><option value="info">Info</option><option value="debug">Debug</option></select><select id="operation-run" aria-label="Internal operation execution" hidden></select></div><div class="output-actions"><label id="follow-control"><input type="checkbox" id="follow" checked> Follow live output</label><span id="output-state" class="output-state" hidden>Output ended</span><div><button id="copy">Copy</button><button id="download">Download original</button></div></div></div><div id="activity-feed" tabindex="0" aria-label="Typed execution timeline"></div><div id="logs" tabindex="0" aria-label="Deployment logs" hidden></div><div class="footer output-footer"><div class="log-top"><button id="log-start" hidden>Jump to start</button><button id="older">Load earlier output</button><button id="newer" hidden>Load later output</button><button id="log-latest" hidden>Latest output</button><button id="new-lines" hidden></button><span id="log-count"></span></div><span id="log-status">Execution events drive status. Original output is retained.</span></div></section>
+  </section>
+</section>
+</main>
+</div>
+</div>
+<dialog id="definition-dialog" aria-labelledby="definition-title">
+  <form method="dialog" class="definition-heading"><h2 id="definition-title">Packaged definition</h2><button aria-label="Close YAML">×</button></form>
+  <p id="definition-note" class="definition-note">Packaged definition, including values and commands. External configuration and CLI overrides are not applied.</p>
+  <p id="definition-reference" class="definition-reference" hidden></p>
+  <pre id="definition-content" tabindex="0" aria-label="Packaged YAML"></pre>
+</dialog>
+</body></html>

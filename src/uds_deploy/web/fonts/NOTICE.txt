@@ -1,0 +1,12 @@
+GitLab Sans and GitLab Mono
+
+Source: @gitlab/fonts 1.3.1
+https://www.npmjs.com/package/@gitlab/fonts/v/1.3.1
+Upstream: https://gitlab.com/gitlab-org/frontend/fonts
+Archive: https://registry.npmjs.org/@gitlab/fonts/-/fonts-1.3.1.tgz
+Archive integrity: sha512-/7Q5Sy9Q3pmutV/1EgURm3iDZtV0HcE4nTwFpHLCrGDdxQ3pNv6SdujzeJExnfiI5Y+1FGfOvKwOlmiVuyDtzA==
+
+The four WOFF2 files are distributed unmodified. GitLab Sans is based on
+Inter; GitLab Mono is based on JetBrains Mono. Both are licensed under the
+SIL Open Font License 1.1. See GitLabSans-LICENSE.txt and GitLabMono-LICENSE.txt
+for the complete copyright and license notices.

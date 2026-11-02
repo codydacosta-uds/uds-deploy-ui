@@ -1,0 +1,125 @@
+# Standalone adaptation of Apache-2.0 watcher code; see NOTICE.
+"""Output-only task tee. Never launches, signals, schedules, or retries a deploy."""
+import json
+import os
+from pathlib import Path
+import shutil
+import shlex
+import subprocess
+import stat
+import sys
+import tempfile
+
+
+def output_home():
+    override=os.environ.get('UDS_DEPLOY_RUNTIME_DIR')
+    return Path(override)/'output' if override else Path(tempfile.gettempdir())/('uds-watch-output-'+str(os.getuid()))
+
+
+def open_capture():
+    override=os.environ.get('UDS_DEPLOY_RUNTIME_DIR')
+    if override:
+        runtime=Path(override)
+        if runtime.is_symlink():raise ValueError('Runtime directory cannot be a symlink')
+        runtime.mkdir(mode=0o700,parents=True,exist_ok=True)
+        if runtime.stat().st_uid!=os.getuid() or stat.S_IMODE(runtime.stat().st_mode)&0o077:raise ValueError('Runtime directory must be private and owned by you')
+    home=output_home()
+    if home.is_symlink():raise ValueError('Capture directory cannot be a symlink')
+    home.mkdir(mode=0o700,parents=True,exist_ok=True)
+    if home.stat().st_uid!=os.getuid() or stat.S_IMODE(home.stat().st_mode)&0o077:raise ValueError('Capture directory must be private and owned by you')
+    # A killed tee may leave data; it is not saved history. Only remove a dead
+    # capture owner on the next task, never another live task's files.
+    for record in home.glob('*/capture.json'):
+        try:
+            if record.is_symlink() or record.parent.is_symlink() or record.stat().st_uid!=os.getuid():continue
+            data=json.loads(record.read_text())
+            try:os.kill(data['pid'],0)
+            except ProcessLookupError:shutil.rmtree(str(record.parent))
+        except (OSError,ValueError,KeyError,TypeError):continue
+    directory=Path(tempfile.mkdtemp(prefix='console-',dir=str(home)))
+    try:
+        stream=(directory/'console.log').open('xb');os.chmod(str(directory/'console.log'),0o600)
+        fd=os.open(str(directory/'capture.json'),os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+        with os.fdopen(fd,'w') as record:json.dump(dict(pid=os.getpid(),shell_pid=os.getppid(),stream='stdout+stderr'),record)
+        return directory,stream
+    except BaseException:
+        shutil.rmtree(str(directory));raise
+
+
+def active_capture(deploy_pid,open_files):
+    """Validate a live sibling tee and its held private log, without pipe reads."""
+    home=output_home()
+    if home.is_symlink():return None
+    if home.exists() and (home.stat().st_uid!=os.getuid() or stat.S_IMODE(home.stat().st_mode)&0o077):return None
+    rows={}
+    output=subprocess.check_output(['ps','-axo','pid=,ppid=,uid=,args='],timeout=3).decode('utf-8',errors='replace')
+    for line in output.splitlines():
+        fields=line.strip().split(None,3)
+        if len(fields)==4:rows[int(fields[0])]=fields
+    deploy=rows.get(deploy_pid)
+    if not deploy:return None
+    parent=int(deploy[1]);uid=str(os.getuid());matches=[]
+    def sibling(owner):
+        return owner==parent or owner in rows and rows[owner][2]==uid and int(rows[owner][1])==parent
+    for record in home.glob('*/capture.json'):
+        try:
+            if record.is_symlink() or record.parent.is_symlink() or record.stat().st_uid!=os.getuid() or stat.S_IMODE(record.stat().st_mode)&0o077:continue
+            data=json.loads(record.read_text());pid=data['pid'];shell=data['shell_pid']
+            if type(pid)!=int or type(shell)!=int or not sibling(shell):continue
+            helper=rows.get(pid)
+            if not helper or helper[2]!=uid or int(helper[1])!=shell:continue
+            args=shlex.split(helper[3])
+            if not any(Path(arg).resolve()==Path(__file__).with_name('capture.py').resolve() for arg in args):continue
+            path=record.parent/'console.log'
+            if path.is_symlink() or path.stat().st_uid!=os.getuid() or not path.is_file() or stat.S_IMODE(path.stat().st_mode)&0o077:continue
+            files=open_files(pid)
+            if not any(r.get('fd')=='0' and r.get('type') in ('PIPE','FIFO') for r in files):continue
+            if not any(r.get('type')=='REG' and Path(r.get('path','')).resolve()==path.resolve() for r in files):continue
+            matches.append(dict(path=path,pid=pid,record=record))
+        except (OSError,ValueError,KeyError,TypeError):continue
+    if len(matches)==1:return matches[0]
+    # The pipeline logger can start just before its registration is flushed.
+    # Defer observation, not execution, rather than locking onto a partial log.
+    for pid,row in rows.items():
+        try:
+            if row[2]==uid and sibling(int(row[1])) and any(Path(a).resolve()==Path(__file__).with_name('capture.py').resolve() for a in shlex.split(row[3])):return {'pending':True}
+        except ValueError:pass
+    return None
+
+
+def copy_output(source,destination):
+    """Pass bytes through even if optional file capture or console output fails."""
+    directory=stream=None;console=True;warned=False
+    def warn():
+        nonlocal warned
+        if warned:return
+        warned=True
+        try:sys.stderr.write('Watcher output capture unavailable; deployment output continues in the terminal.\n');sys.stderr.flush()
+        except OSError:pass
+    try:
+        try:directory,stream=open_capture()
+        except (OSError,ValueError):warn()
+        read=getattr(source,'read1',source.read)
+        while True:
+            chunk=read(32768)
+            if not chunk:break
+            if stream is not None:
+                try:stream.write(chunk);stream.flush()
+                except OSError:
+                    warn()
+                    try:(directory/'capture.json').unlink()
+                    except OSError:pass
+                    try:stream.close()
+                    except OSError:pass
+                    stream=None
+            if console:
+                try:destination.write(chunk);destination.flush()
+                except OSError:console=False  # Do not close the deployment's pipe.
+    finally:
+        if stream is not None:
+            try:stream.close()
+            except OSError:pass
+        if directory is not None:
+            try:shutil.rmtree(str(directory))
+            except OSError:pass
+    return 0

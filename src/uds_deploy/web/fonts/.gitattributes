@@ -1,0 +1,2 @@
+# Preserve upstream font license notices verbatim.
+*-LICENSE.txt -whitespace
