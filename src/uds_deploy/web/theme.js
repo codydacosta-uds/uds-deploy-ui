@@ -1,5 +1,5 @@
 'use strict';
-// Standalone adaptation of Apache-2.0 watcher code; see NOTICE.
+// Shared Apache-2.0 deployment viewer UI; source/asset notices accompany each distribution.
 // UI preference only. Never stores deployment state or changes execution.
 (()=>{
   const key='uds-deploy-theme';

@@ -1,4 +1,4 @@
-/* Standalone adaptation of Apache-2.0 watcher code; see NOTICE. */
+/* Shared Apache-2.0 deployment viewer UI; source/asset notices accompany each distribution. */
 body[data-mode=live] #deployments-page .page-description,
 body[data-mode=live] #deployments-page .empty,
 body[data-mode=live] #deployments-page .cell-secondary,

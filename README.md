@@ -16,7 +16,7 @@ UDS or Zarf CLI already on your PATH. The report catalog is source-audited for
 **UDS 0.40.0 / Zarf 0.88.0**; other versions are best-effort, not certified.
 
 ```sh
-git clone --branch v0.1.0-preview.3 https://github.com/codydacosta-uds/uds-deploy-ui.git
+git clone --branch v0.1.0-preview.4 https://github.com/codydacosta-uds/uds-deploy-ui.git
 cd uds-deploy-ui
 ./uds-watch doctor
 ./uds-watch
@@ -147,6 +147,29 @@ uds-watch doctor
 
 This uses setuptools only to build/install the package; the running application
 uses Python's standard library.
+
+## One shared UI—no styling forks
+
+The approved `uds-deploy-ui` branch of sonic-swf-iac is the UI source of truth
+(`scripts/uds_deploy/web/`). Standalone `src/uds_deploy/web/` is a **verbatim vendor
+copy**, not a second design: HTML, JavaScript, CSS, fonts, logos, and the development
+reload script stay byte-for-byte identical. Only backend integration/packaging
+differs. The shared HTML defaults to the approved read-only watcher mode.
+
+A pinned `ui-assets.json` and `tests/test_ui_parity.py` reject local drift.
+Maintainers synchronize from the approved checkout:
+
+```sh
+python3 scripts/sync-ui.py \
+  --source /path/to/approved-checkout/scripts/uds_deploy/web \
+  --manifest /path/to/approved-checkout/ui-assets.json \
+  --destination src/uds_deploy/web --destination-manifest ui-assets.json
+```
+
+Repeat the command with `--check` to verify parity. Do not independently edit the
+standalone copy or merely regenerate its manifest. Run parity checks in both
+repositories and Playwright on affected views. This is development-time syncing;
+standalone users do not need the original repository to install or run the tool.
 
 ## Development
 

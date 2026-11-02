@@ -13,7 +13,7 @@ function contrast(a,b){const lum=s=>s.match(/[\d.]+/g).slice(0,3).map(Number).ma
   await page.goto(url);await page.waitForSelector('#history-empty:visible');await page.evaluate(()=>document.fonts.ready);
   const actual=await page.request.get(new URL('api/deployments',url).href);assert.equal((await actual.json()).length,0,'This check requires a truly empty current viewer; no captures are hidden or fabricated');
   assert.equal(await page.locator('#history-empty h2').innerText(),'Ready to watch a deployment');assert.match(await page.locator('#history-empty p').innerText(),/capture setup enabled/);assert.doesNotMatch(await page.locator('#history-empty p').innerText(),/uds run|cannot be recovered/);
-  assert.equal(await page.locator('#deployment-table-scroll').isVisible(),false,'No ghost table headings without deployments');
+  assert.equal(await page.locator('#deployment-table-scroll').isVisible(),false,'No ghost table headings without deployments');assert.equal(await page.locator('#connection').isVisible(),false,'Do not show healthy Local viewer ready status');
   const toggle=page.getByRole('button',{name:'Dark mode',exact:true});
   for(const theme of ['light','dark']){
    if((await toggle.getAttribute('aria-pressed')==='true')!==(theme==='dark'))await toggle.click();
@@ -21,6 +21,8 @@ function contrast(a,b){const lum=s=>s.match(/[\d.]+/g).slice(0,3).map(Number).ma
    const colors=await page.evaluate(()=>{const background=getComputedStyle(document.querySelector('main')).backgroundColor;return ['#history-description','#history-empty h2','#history-empty p','.deployment-table th'].map(selector=>({selector,color:getComputedStyle(document.querySelector(selector)).color,background}));});for(const item of colors)assert.ok(contrast(item.background,item.color)>=4.5,'Readable '+theme+' empty state: '+item.selector);
    for(const width of [390,1280,1600]){await page.setViewportSize({width,height:1000});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.screenshot({path:path.join(evidence,theme+'-'+width+'.png'),fullPage:true});}
   }
+  // Isolated network-outage regression, not injected deployment/lifecycle data.
+  await page.route('**/api/processes',route=>route.abort());await page.evaluate(()=>discover());assert.equal(await page.locator('#notice').isVisible(),true,'Connection failures must remain visible even when healthy status is hidden');
   assert.deepEqual(errors,[]);assert.deepEqual(writes,[]);assert.deepEqual(external,[]);console.log('Real empty viewer passed: approved light/dark UDS logos, no ghost table headings, readable contrast, generic deployment instructions, responsive widths. Evidence: '+evidence);
  }finally{
   if(browser)await browser.close();server.kill('SIGINT');await new Promise(resolve=>{if(server.exitCode!==null)return resolve();server.once('exit',resolve);});fs.rmSync(home,{recursive:true,force:true});

@@ -1,5 +1,5 @@
 'use strict';
-// Standalone adaptation of Apache-2.0 watcher code; see NOTICE.
+// Shared Apache-2.0 deployment viewer UI; source/asset notices accompany each distribution.
 // All lifecycle/operation data comes from the normalized execution model.
 // Raw text is used only for display and literal log search, never to infer state.
 const $ = id => document.getElementById(id);
@@ -67,7 +67,7 @@ function showPage(view,navigate=false){
   $('nav-deployments').classList.toggle('active',view==='history');$('nav-pipeline').classList.toggle('active',view==='pipeline');
   for(const [id,active]of [['nav-deployments',view==='history'],['nav-pipeline',view==='pipeline']]){if(active)$(id).setAttribute('aria-current','page');else $(id).removeAttribute('aria-current');}
   if(navigate){const url=new URL(location.href);if(view==='history')url.searchParams.delete('deployment');else if(run)url.searchParams.set('deployment',run);window.history.pushState(null,'',url);}
-  if(view==='history'){notice('');renderHistory();if(!stream)$('connection').textContent='Local viewer';}else if(state){render();scheduleWires();}
+  if(view==='history'){notice('');renderHistory();if(!stream){$('connection').textContent='Local viewer';if(liveOnly)$('connection').className='live';}}else if(state){render();scheduleWires();}
 }
 function renderHistory(){
   const search=$('deployment-search').value.trim().toLocaleLowerCase(),filter=$('deployment-status').value;
@@ -106,7 +106,7 @@ async function discover(){try{
     for(const process of processes)$('processes').append(node('p',`${process.tool} ${process.kind} · PID ${process.pid} · process detected; detail available only for task-captured output.`));
     if(initialRoute&&!new URL(location.href).searchParams.has('deployment')&&runs.length){initialRoute=false;await chooseRun((runs.find(r=>r.status==='deploying')||runs[0]).id,false);}
   }
-  if(!runs.length){$('connection').textContent='Local viewer ready';return;}
+  if(!runs.length){$('connection').textContent='Local viewer ready';$('connection').className=liveOnly?'live':'';return;}
   const key=runs.map(r=>`${r.id}:${r.status}`).join('|');
   if($('history').dataset.optionsKey!==key){$('history').replaceChildren();for(const item of runs){const o=node('option',`${item.environment} / ${item.bundle_name} · ${item.status} · ${new Date(item.created_at*1000).toLocaleString()}`);o.value=item.id;$('history').append(o);}$('history').dataset.optionsKey=key;}
   const active=runs.find(r=>['waiting','deploying'].includes(r.status));updateActiveLink();$('history').value=run||previous||(active||runs[0]).id;
@@ -890,7 +890,7 @@ $('older').onclick=()=>pageLogs('older').catch(e=>notice(e.message));$('newer').
 $('log-latest').onclick=$('new-lines').onclick=()=>latestLogs().catch(e=>notice(e.message));
 $('copy').onclick=async()=>{try{await navigator.clipboard.writeText(logs.map(r=>r.data.raw).join(''));$('copy').textContent='Copied';setTimeout(()=>$('copy').textContent='Copy',1000);}catch(e){notice(e.message);}};
 $('download').onclick=()=>{const link=node('a');link.href=logURL('download=1');link.download=`${run}-original.log`;link.click();};
-function retryPackage(){notice('Read-only watcher. Retry from your deployment terminal.');}
+async function retryPackage(id){if(liveOnly){notice('Read-only watcher. Retry from your deployment terminal.');return;}const p=state.packages.find(p=>p.id===id);if(!confirm(`Retry ${p.name} with this deployment's saved bundle, configuration, and context? Successful packages will not be restarted.`))return;$('retry').disabled=true;try{await request(`${api}/${run}/packages/${encodeURIComponent(p.id)}/retry`,{method:'POST',headers:{'Content-Type':'application/json','X-Deploy-Action':'retry-or-start'},body:'{}'});if(selected===id)autoAttempt=true;await refreshState();}catch(e){notice(e.message);$('retry').disabled=false;}}
 $('retry').onclick=()=>retryPackage(selected);
 $('close-output').onclick=()=>{inspectorOpen=false;render();const el=[...document.querySelectorAll('[data-focus-key]')].find(e=>e.dataset.focusKey===document.body.dataset.outputFocus);if(el)el.focus({preventScroll:true});};
 $('close-output').hidden=!liveOnly;

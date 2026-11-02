@@ -1,4 +1,4 @@
-/* Standalone adaptation of Apache-2.0 watcher code; see NOTICE. */
+/* Shared Apache-2.0 deployment viewer UI; source/asset notices accompany each distribution. */
 :root {
   color-scheme: light;
   --ink: #ececef; --muted: #a3a3ac; --line: #414147; --blue: #a8c9f1;

@@ -81,7 +81,9 @@ def make_server(store, port=8765):
                 if filename in STATIC_ASSETS:
                     kind=STATIC_ASSETS[filename]
                     self.send_headers(200,kind if kind.startswith(('font/','image/')) else kind+'; charset=utf-8')
-                    self.wfile.write((WEB/filename).read_bytes())
+                    content=(WEB/filename).read_bytes()
+                    if filename=='index.html':content=content.replace(b'<body>',b'<body data-mode="live">')
+                    self.wfile.write(content)
                     return
                 if parts==['api','processes']:
                     self.body(store.processes());return
