@@ -16,7 +16,7 @@ UDS or Zarf CLI already on your PATH. The report catalog is source-audited for
 **UDS 0.40.0 / Zarf 0.88.0**; other versions are best-effort, not certified.
 
 ```sh
-git clone --branch v0.1.0-preview.1 https://github.com/codydacosta-uds/uds-deploy-ui.git
+git clone --branch v0.1.0-preview.2 https://github.com/codydacosta-uds/uds-deploy-ui.git
 cd uds-deploy-ui
 ./uds-watch doctor
 ./uds-watch
@@ -31,43 +31,77 @@ The last command opens your browser. Leave that terminal running; Ctrl+C stops
 private loopback URL instead. If the port is occupied, reuse your existing
 viewer URL or run `./uds-watch --port 0` for an available port.
 
-### Enable automatic capture in your deployment terminal
+### Automatic capture: approve setup once, then deploy normally
 
-In the terminal where you deploy, run this once, using the actual clone path:
+On its **first interactive launch**, `./uds-watch` asks whether to enable automatic
+capture. Answer **y** to add a small, clearly marked startup block. Nothing is
+edited without your approval. Declining is remembered; use `./uds-watch setup`
+if you change your mind. Use `./uds-watch --no-setup` to skip the prompt.
+Non-interactive viewer launches never prompt or edit startup files.
 
-```sh
-eval "$(/path/to/uds-deploy-ui/uds-watch shell-init)"
-```
-
-Then deploy **as usual**, from your normal working directory:
+After approving, **open a new deployment terminal**. Existing terminals cannot
+be changed by a child process. Leave the viewer running and deploy as usual:
 
 ```sh
 uds deploy path/to/bundle.tar.zst --confirm
+# Or, when using standalone Zarf:
+zarf package deploy path/to/package.tar.zst --confirm
 ```
 
-The opt-in shell function calls the native UDS binary with your unchanged
-arguments and copies its output to your terminal and a private temporary file.
-It does not start the viewer, select packages, schedule, retry, or stop work.
-The native CLI's exit status is returned. Ctrl+C goes to the CLI; the capture
-helper drains its final cleanup output.
+You can also configure capture explicitly:
 
-- Bash and zsh are supported. Override detection with `shell-init --shell bash`
-  or `shell-init --shell zsh`.
-- For standalone Zarf, enable `shell-init --tool zarf`, then use
-  `zarf package deploy ...` normally.
-- Only recognized deployment commands are captured; unrelated commands pass
-  through. Unknown global flag arity is not guessed.
-- Existing `uds` aliases/functions are **not overwritten**. Resolve that conflict
-  explicitly before enabling the hook.
-- Disable the hook with `unset -f uds` (or `unset -f zarf`). Your binary is unchanged.
-- Nothing edits your shell startup files. To enable it in future terminals, you
-  may add the same `eval` line to your own `.zshrc` or `.bashrc`.
-- Capture combines stdout/stderr. Piped output can change the CLI's animated
-  progress rendering; interactive input remains in your deployment terminal.
+```sh
+./uds-watch setup                 # shows files and asks for approval
+./uds-watch setup --yes           # explicitly approved unattended setup
+./uds-watch setup --shell bash    # choose a shell explicitly
+./uds-watch uninstall             # remove only the managed startup block
+```
 
-For scripts or existing deployment tasks, an output-only stdin tee is also
-available as `uds-watch capture`. The caller must preserve the native CLI's
-pipeline exit status; the shell hook handles that for interactive use.
+For zsh, setup uses `$ZDOTDIR/.zshrc` or `~/.zshrc`. For Bash, it configures
+`~/.bashrc` and the existing login startup file (or creates `~/.bash_profile` if
+none exists). This supports both login and non-login terminals. A shared
+`.profile` block is guarded for the selected shell. For nonstandard dotfiles,
+use `setup --rc-file /actual/startup/file --shell zsh`; select the same file when
+uninstalling. Symlinked, hard-linked, read-only, or invalid-syntax startup files
+are refused rather than silently replaced.
+
+### Does this change or replace UDS?
+
+**No UDS/Zarf binary or deployment configuration is edited.** With your consent,
+setup adds optional shell functions named `uds` and `zarf`. They call the actual
+native binaries with unchanged arguments and copy output to your terminal and
+a private temporary capture. Unrelated commands pass through; unknown global
+flag arity is not guessed. The native CLI's exit status is returned, and Ctrl+C
+is handled by the CLI while the capture helper drains its cleanup output.
+
+Safety measures:
+
+- Existing aliases and custom functions are **not overwritten**. A conflicting
+  wrapper stays in control and capture is skipped until you resolve it explicitly.
+- Existing startup bytes are retained outside the managed block. Syntax is
+  checked without executing your configuration. Edits are atomic, repeatable,
+  and reversible; detected concurrent edits are refused.
+- Backups are kept under `~/.config/uds-watch/backups` (or `$XDG_CONFIG_HOME`),
+  with directory mode 0700 and file mode 0600. **They may contain sensitive existing
+  shell settings**; they stay local and are never served, uploaded, or printed.
+- Uninstall removes only the managed block and preserves later user edits. It
+  does not blindly restore a backup over your changes. Open a new terminal
+  afterward; existing terminal functions remain unchanged.
+- If the clone is moved/deleted or the native CLI is absent, the startup block
+  safely skips loading the hook. It does not prevent your shell from opening.
+- Capture combines stdout/stderr. Piping can change animated progress rendering;
+  interactive input remains in your deployment terminal. This is not a promise
+  of compatibility with every custom wrapper or future CLI version.
+
+**Manual, current-terminal-only option:** if you do not want startup files edited,
+use `eval "$(/path/to/uds-deploy-ui/uds-watch shell-init)"`. Add `--tool zarf` for
+standalone Zarf. This command only prints shell code and never edits files.
+If you enabled the watcher function in that terminal, `unset -f uds` disables
+it; do not unset your own unrelated custom functions.
+
+For scripts or existing deployment tasks, an output-only stdin tee is available
+as `uds-watch capture`. The caller must preserve the native CLI's pipeline exit
+status; the interactive shell hook handles that automatically.
 
 ## What the watcher does—and does not do
 

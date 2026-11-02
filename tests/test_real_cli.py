@@ -52,11 +52,15 @@ class RealCLITests(unittest.TestCase):
                         if file.exists():file.unlink()
                     outcome.write_text('fail')
                     args=['--log-level','info']+(['deploy',str(bundle)] if verb=='deploy' else ['zarf','package','deploy',str(zarf)])+['-a','amd64','--confirm','--no-progress','--skip-signature-validation']
-                    prefix='eval "$("$1" shell-init --shell "$2")"; shift 2; ' if hook else 'shift 2; '
+                    startup=root/('startup-'+shell)
+                    if hook and not startup.exists():
+                        configured=subprocess.run([str(ROOT/'uds-watch'),'setup','--yes','--shell',shell,'--tool','uds','--rc-file',str(startup)],env=env,capture_output=True,timeout=10)
+                        self.assertEqual(configured.returncode,0,'Isolated shell setup failed')
+                    prefix='. "$1"; shift 2; ' if hook else 'shift 2; '
                     command=prefix+'uds "$@"'
                     output=root/'terminal.log'
                     with output.open('wb') as console:
-                        task=subprocess.Popen([binary,'-c',command,'sdk-probe',str(ROOT/'uds-watch'),shell]+args,env=env,cwd=root,stdout=console,stderr=subprocess.STDOUT,start_new_session=True)
+                        task=subprocess.Popen([binary,'-c',command,'sdk-probe',str(startup if hook else ROOT/'uds-watch'),shell]+args,env=env,cwd=root,stdout=console,stderr=subprocess.STDOUT,start_new_session=True)
                     reader=NativeReader()
                     try:
                         deadline=time.monotonic()+20
