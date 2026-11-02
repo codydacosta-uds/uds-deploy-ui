@@ -160,8 +160,8 @@ function inferSequentialCompletion(state,reports){
   // Presentation-only policy: stock UDS/Zarf executes these operations in one
   // sequential CLI stream. Never alter raw reports or use another process,
   // missing output, elapsed time, or process disappearance as success evidence.
-  if(state.source?.kind!=='stock-process'||state.source.output_complete!==true||['concurrent','parallel'].includes(state.mode)||(state.packages||[]).filter(p=>p.status==='deploying').length>1)return reports;
-  const errors=reports.filter(r=>r.kind==='deployment.error'||r.message==='action failed'),groups=new Map(),assumptions=new Map();
+  if(state.source?.kind!=='stock-process'||state.source.output_complete!==true||state.source.activity_available===false||state.status==='failed'||['concurrent','parallel'].includes(state.mode)||(state.packages||[]).filter(p=>p.status==='deploying').length>1)return reports;
+  const errors=reports.filter(r=>r.kind==='deployment.error'||r.message==='action failed'||r.kind==='actions.command'&&r.label==='Failure action'),groups=new Map(),assumptions=new Map();
   const sameOwner=(a,b)=>a&&b&&a.package===b.package&&a.component===b.component;
   const noErrorBetween=(start,end)=>!errors.some(r=>r.timestamp>start&&r.timestamp<=end);
   for(const r of reports){
@@ -177,6 +177,7 @@ function inferSequentialCompletion(state,reports){
       r.kind==='actions.command'&&['running command','action succeeded'].includes(r.message)&&['Post-deploy action','Success action'].includes(r.label)&&sameOwner(r.definition_owner,owner)
     )).sort((a,b)=>a.timestamp-b.timestamp)[0];
     if(next&&noErrorBetween(last.timestamp,next.timestamp))assumptions.set(last,{inferred_complete:true,inference_evidence:'Assumed complete: the same sequential CLI advanced to '+(next.label||next.message)+' without a reported error',inference_boundary:next.id});
+    else if(!next&&last.kind==='health.wait'&&state.completed_at&&!['waiting','deploying'].includes(state.status)&&!errors.length&&!(state.checks||[]).some(c=>c.current_deployment&&c.status==='failed'))assumptions.set(last,{inferred_complete:true,inference_evidence:'Assumed complete: Helm health checks were reached, then the CLI ended with a complete captured stream and no reported errors. Native exit code was not observed.'});
   }
   // Some stock actions also omit their success line (e.g. variable-setting
   // commands). Apply the same advancement rule without exposing command bodies.
@@ -197,7 +198,7 @@ function inferSequentialCompletion(state,reports){
   }
   let projected=reports.map(r=>assumptions.has(r)?{...r,...assumptions.get(r)}:r);
   // The final package has no subsequent package-start signal. Require positive
-  // final-action evidence and coverage of every declared component as well as
+  // final-action or approved terminal-health inference, with coverage of every declared component and
   // completed observed work; CLI disappearance by itself never passes this gate.
   if(state.completed_at&&!['waiting','deploying'].includes(state.status)){
     const finalStart=reports.filter(r=>r.kind==='package.start').reduce((a,b)=>!a||b.timestamp>=a.timestamp?b:a,null),pkg=state.packages?.slice(-1)[0];
@@ -211,7 +212,8 @@ function inferSequentialCompletion(state,reports){
       const covered=components.length&&components.every(c=>own.some(r=>r.kind==='component.start'&&r.definition_owner.component===c.id));
       const complete=groups.size&&[...groups.values()].every(items=>{const component=components.find(c=>c.id===items[0].definition_owner.component);return reportedStepState(items,component,state.checks,false,false).state==='succeeded';});
       const finalAction=last?.kind==='actions.command'&&last.message==='action succeeded'&&['Post-deploy action','Success action'].includes(last.label);
-      if(covered&&complete&&finalAction)projected=projected.map(r=>r.id===finalStart.id?{...r,inferred_package_complete:true,inference_evidence:'Assumed complete: final post-deploy action succeeded, every declared component was observed, all observed work is complete, and the CLI ended without a reported error'}:r);
+      const finalHealth=last?.kind==='health.wait'&&last.inferred_complete;
+      if(covered&&complete&&(finalAction||finalHealth))projected=projected.map(r=>r.id===finalStart.id?{...r,inferred_package_complete:true,inference_evidence:finalHealth?'Assumed complete: final Helm health checks were reached, every declared component was observed, all observed work is complete, and the CLI ended with a complete error-free capture. Native exit code was not observed.':'Assumed complete: final post-deploy action succeeded, every declared component was observed, all observed work is complete, and the CLI ended without a reported error'}:r);
     }
   }
   return projected;
@@ -265,6 +267,13 @@ function reportedPackageState(pkg,reports,active){
   const inferred=reports.find(r=>r.inferred_package_complete);
   if(inferred)return {state:'succeeded',label:'Done',inferred:true,evidence:inferred.inference_evidence};
   return {state:'unknown',label:reports.length?'Result not reported':'Not reported',evidence:reports.length?'The CLI did not expose a final package result; confirmed steps alone are not package success':'No package activity reported'};
+}
+function inferredRunCompletion(snapshot){
+  if(snapshot.source?.kind!=='stock-process'||snapshot.source.output_complete!==true||snapshot.source.activity_available===false||!snapshot.completed_at||['waiting','deploying','failed'].includes(snapshot.status)||!(snapshot.packages||[]).length)return false;
+  if((snapshot.checks||[]).some(c=>c.current_deployment&&c.status==='failed'))return false;
+  const reports=inferSequentialCompletion(snapshot,scopeImageReports(snapshot.reports||[]));
+  if(reports.some(r=>r.kind==='deployment.error'||r.message==='action failed'))return false;
+  return snapshot.packages.every(pkg=>reportedPackageState(pkg,reports.filter(r=>r.definition_owner?.package===pkg.id),false).state==='succeeded');
 }
 function showPackageConnectors(layout,mode,activeCount,packageCount){
   return layout==='pipeline'&&packageCount>1&&activeCount<=1&&!['concurrent','parallel'].includes(mode);
@@ -406,7 +415,7 @@ function renderStockPipeline(){
       const header=node('div',undefined,'step-detail-heading'),result=appearance.state==='succeeded'?'Done':appearance.state==='running'?'Running':appearance.state==='failed'?'Failed':'Result unknown';header.append(node('h3',text.action),node('span',result,'step-detail-result '+appearance.state));details.append(header);
       const facts=node('dl',undefined,'step-detail-facts');function fact(label,value){if(value)facts.append(node('dt',label),node('dd',String(value)));}
       fact(text.manifest?'Manifest':'Target',text.target);fact('Packaged namespace',text.namespace);fact('Release',text.release);if(text.chart)fact('Chart',text.chart+(text.chartVersion?' '+text.chartVersion:''));fact('Last CLI report',text.error||text.detail);fact('Evidence',appearance.evidence);
-      if(appearance.inferred)fact('Completion basis','Inferred from sequential CLI advancement, not an explicit success report');
+      if(appearance.inferred)fact('Completion basis','Inferred from CLI progress and completion evidence, not an explicit success report');
       details.append(facts);const actions=node('div',undefined,'step-detail-actions'),logs=node('button','Go to logs','step-log-link');logs.onclick=()=>openOutput(context+':'+selectedKey,context,{items:selectedItems,label:text.action+(text.target?' · '+text.target:'')});actions.append(logs);details.append(actions);parent.append(details);
     }
   }
@@ -653,8 +662,9 @@ function render(){
   $('run-reference').textContent=`Run ${state.id.slice(0,8)}`;$('run-reference').title=state.id;$('run-id').textContent=state.id;
   const reportedErrors=state.source?.kind==='stock-process'&&(state.reports||[]).some(r=>r.message==='action failed'||r.kind==='deployment.error');
   const blindProcess=state.source?.kind==='stock-process'&&state.status==='deploying'&&state.source.output_complete===false&&(!(state.reports||[]).length||state.source.activity_available===false);
-  $('run-status').textContent=reportedErrors?'Errors reported':blindProcess?'Process running':state.source?.kind==='stock-process'&&state.completed_at?'Process ended':title(state.status);$('run-status').className=`run-status ${reportedErrors?'failed':state.status}`;
-  $('run-status').title=state.source?.kind==='stock-process'&&state.completed_at?'Exit code unavailable to this watcher; check the deployment terminal.':blindProcess?'Process is alive; the attached log does not expose current step activity.':'';
+  const inferredDone=!reportedErrors&&inferredRunCompletion(state);
+  $('run-status').textContent=reportedErrors?'Errors reported':inferredDone?'Done':blindProcess?'Process running':state.source?.kind==='stock-process'&&state.completed_at?'Process ended':title(state.status);$('run-status').className=`run-status ${reportedErrors?'failed':inferredDone?'completed':state.status}`;
+  $('run-status').title=inferredDone?'Assumed complete from the full error-free CLI stream and completed observed package work. Native exit code was not observed.':state.source?.kind==='stock-process'&&state.completed_at?'Exit code unavailable to this watcher; check the deployment terminal.':blindProcess?'Process is alive; the attached log does not expose current step activity.':'';
   document.body.classList.toggle('stock-observation',['stock-process','task-capture'].includes(state.source?.kind));
   $('count').textContent=`${state.packages.filter(p=>p.status==='completed').length} of ${state.packages.length}`;
   $('elapsed').textContent=elapsed(state.started_at,state.completed_at);$('mode').textContent=title(state.mode);

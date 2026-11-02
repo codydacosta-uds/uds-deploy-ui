@@ -27,7 +27,7 @@ async function until(test,message,timeout=25000){const deadline=Date.now()+timeo
   await page.getByRole('button',{name:'Dark mode',exact:true}).click();await page.screenshot({path:path.join(manifest.evidence,manifest.shell+'-02-live-transition-dark.png'),fullPage:true});
   fs.writeFileSync(manifest.release_verify,'release');await until(()=>fs.existsSync(manifest.task_exit),'Native deployment did not finish');
   assert.equal(JSON.parse(fs.readFileSync(manifest.task_exit,'utf8')).code,0,'Real native CLI must complete successfully');
-  await page.waitForFunction(()=>!!state.completed_at);await page.waitForFunction(()=>document.querySelector('#run-status').textContent==='Process ended');
+  await page.waitForFunction(()=>!!state.completed_at);await page.waitForFunction(()=>document.querySelector('#run-status').textContent==='Done');
   assert.equal(await page.locator('.current-cli-activity').count(),0,'Ended CLI is no longer presented as running');
   assert.equal(await page.locator('[data-status-package]').first().getAttribute('data-package-status'),'succeeded','Positive final action and CLI advancement permit the documented green inferred result');
   await card.getByRole('button',{name:'Inspect watcher-journey / prepare',exact:true}).click();assert.equal(await card.locator('.component-execution:visible .stock-job').first().getAttribute('data-step-status'),'succeeded');
