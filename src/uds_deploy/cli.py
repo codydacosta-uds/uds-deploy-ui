@@ -1,5 +1,6 @@
 """User-facing launcher and opt-in output-only shell integration."""
 import argparse
+import errno
 import os
 from pathlib import Path
 import shlex
@@ -111,10 +112,19 @@ def doctor():
     return 0 if supported and not missing else 1
 
 
+def bind_viewer(store,port=None):
+    from .server import make_server
+    try:return make_server(store,8765 if port is None else port)
+    except OSError as error:
+        if port is not None or error.errno!=errno.EADDRINUSE:raise
+        print('Default port 8765 is in use; choosing an available loopback port.',flush=True)
+        return make_server(store,0)
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser(prog='uds-watch',description='Open a local, read-only UDS/Zarf deployment viewer. Never starts or stops a deployment.')
     parser.add_argument('--version',action='version',version='%(prog)s '+__version__)
-    parser.add_argument('--port',type=int,default=8765,help='loopback port; use 0 for an available port (default: 8765)')
+    parser.add_argument('--port',type=int,default=None,help='explicit loopback port; 0 chooses an available port (default: try 8765, then choose a free port)')
     parser.add_argument('--no-browser',action='store_true',help='print the private URL without opening a browser')
     parser.add_argument('--no-setup',action='store_true',help='skip the first-run capture setup prompt')
     commands=parser.add_subparsers(dest='command')
@@ -150,14 +160,14 @@ def main(argv=None):
     if args.command=='capture':
         helper=str(Path(__file__).with_name('capture.py'))
         os.execv(sys.executable,[sys.executable,helper])
-    if not 0<=args.port<=65535:parser.error('Port must be between 0 and 65535')
+    if args.port is not None and not 0<=args.port<=65535:parser.error('Port must be between 0 and 65535')
     if doctor():
         print('Install the missing prerequisites above, then run uds-watch again.',file=sys.stderr)
         return 1
-    from .server import make_server,WatcherStore
+    from .server import WatcherStore
     store=WatcherStore()
     try:
-        server=make_server(store,args.port)
+        server=bind_viewer(store,args.port)
     except OSError:
         store.close();parser.error('Cannot bind the loopback port. Reuse your existing viewer URL or choose --port 0.')
     try:

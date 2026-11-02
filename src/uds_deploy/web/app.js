@@ -73,6 +73,7 @@ function renderHistory(){
   const search=$('deployment-search').value.trim().toLocaleLowerCase(),filter=$('deployment-status').value;
   const items=discoveredRuns.filter(r=>`${r.bundle_name} ${r.version} ${r.environment} ${r.target} ${r.id}`.toLocaleLowerCase().includes(search)&&(!filter||filter==='active'&&['waiting','deploying'].includes(r.status)||filter==='unknown'&&['unknown','cancelled'].includes(r.status)||r.status===filter));
   $('deployment-total').textContent=discoveredRuns.length;
+  $('deployment-table-scroll').hidden=items.length===0;
   $('history-empty').hidden=discoveredRuns.length!==0;$('history-note').textContent=liveOnly?'Current local tasks only. No database, saved deployment history, or UI-owned retries.':`${items.length} of ${discoveredRuns.length} saved runs · latest 50 shown. Start deployments from the terminal.`;
   const key=JSON.stringify([discoveredRuns,search,filter]);
   if(key!==historyKey){
@@ -866,9 +867,9 @@ async function pageLogs(direction){
 function latestLogs(){$('follow').checked=true;return loadLogs();}
 if(liveOnly){
   $('nav-deployments').textContent='Current tasks';$('breadcrumb-home').textContent='Current tasks';$('history-title').textContent='Current tasks';
-  $('history-description').textContent='Watch a local deployment already started in another terminal.';
-  $('history-empty').querySelector('h2').textContent='Waiting for a local deployment';
-  $('history-empty').querySelector('p').textContent='Run your usual uds run deployment task, then open this watcher. Existing bare uds/zarf processes can be detected, but their old terminal output cannot be recovered.';
+  $('history-description').textContent='Deploy in another terminal; active deployments appear here automatically.';
+  $('history-empty').querySelector('h2').textContent='Ready to watch a deployment';
+  $('history-empty').querySelector('p').textContent='With capture setup enabled, open a new terminal and run your usual uds deploy command. This viewer does not start deployments.';
   $('log-status').textContent='Original output retained.';
   document.title='UDS · Local watcher';
 }

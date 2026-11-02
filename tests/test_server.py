@@ -40,11 +40,11 @@ class ServerTests(unittest.TestCase):
             with self.assertRaises(HTTPError) as error:urlopen(request)
             self.assertEqual(error.exception.code,403);error.exception.close()
     def test_static_allowlist_and_headers(self):
-        for path,kind in [('', 'text/html'),('theme.js','text/javascript'),('fonts/GitLabSans.woff2','font/woff2'),('fonts/NOTICE.txt','text/plain')]:
+        for path,kind in [('', 'text/html'),('theme.js','text/javascript'),('fonts/GitLabSans.woff2','font/woff2'),('fonts/NOTICE.txt','text/plain'),('uds-logo.png','image/png'),('uds-logo-on-dark.png','image/png')]:
             with urlopen(self.url+path) as response:
                 self.assertEqual(response.headers.get_content_type(),kind);self.assertEqual(response.headers['Cache-Control'],'no-store')
                 self.assertIn("font-src 'self'",response.headers['Content-Security-Policy']);self.assertNotIn('https:',response.headers['Content-Security-Policy'])
-        for path in ['../server.py','fonts%2f..%2f..%2fserver.py','capture.py','uds-logo.png']:
+        for path in ['../server.py','fonts%2f..%2f..%2fserver.py','capture.py','other-logo.png']:
             with self.assertRaises(HTTPError) as error:urlopen(self.url+path)
             self.assertEqual(error.exception.code,404);error.exception.close()
     def test_mutations_are_never_supported(self):

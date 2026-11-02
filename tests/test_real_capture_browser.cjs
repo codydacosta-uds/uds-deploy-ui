@@ -13,7 +13,7 @@ function contrast(a,b){const lum=s=>s.match(/[\d.]+/g).slice(0,3).map(Number).ma
   browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:1600,height:1100}}),errors=[],writes=[],external=[];
   page.on('pageerror',e=>errors.push(e.message));page.on('request',request=>{if(!['GET','HEAD'].includes(request.method()))writes.push(request.method());if(new URL(request.url()).origin!==new URL(url).origin)external.push('external request');});
   await page.goto(url+'?deployment='+encodeURIComponent(id));await page.waitForSelector('.package-execution');await page.evaluate(()=>document.fonts.ready);
-  assert.equal(await page.locator('.watch-brand').innerText(),'UDS Watch');assert.equal(await page.locator('.uds-brand img').count(),0,'No unlicensed official logos');
+  assert.equal(await page.locator('.uds-brand img:visible').count(),1,'Use the approved UDS branding');assert.equal(await page.locator('.watch-brand').count(),0);
   assert.equal(await page.locator('#artifact-kind').innerText(),'Bundle');assert.equal(await page.locator('#artifact-kind').getAttribute('data-kind'),'bundle');
   const capture=await page.evaluate(()=>({packages:state.packages.map(p=>({id:p.id,components:p.attempts.at(-1)?.execution?.components.map(c=>c.id)||[]}))}));
   await page.getByRole('button',{name:'Expand all packages',exact:true}).click();const cards=page.locator('.package-execution');assert.equal(await cards.count(),capture.packages.length);
@@ -25,6 +25,7 @@ function contrast(a,b){const lum=s=>s.match(/[\d.]+/g).slice(0,3).map(Number).ma
   const first=cards.first(),toggle=page.getByRole('button',{name:'Dark mode',exact:true});
   for(const theme of ['light','dark']){
    if((await toggle.getAttribute('aria-pressed')==='true')!==(theme==='dark'))await toggle.click();
+   const logo=page.locator('.uds-brand img:visible');assert.equal(await logo.count(),1);assert.equal(await logo.evaluate(e=>e.complete&&e.naturalWidth>0),true);assert.equal(await logo.getAttribute('src'),theme==='dark'?'uds-logo-on-dark.png':'uds-logo.png');
    const bundleStyle=await page.locator('#artifact-kind').evaluate(e=>({bg:getComputedStyle(e).backgroundColor,color:getComputedStyle(e).color,radius:getComputedStyle(e).borderRadius}));assert.equal(bundleStyle.radius,'999px');assert.ok(contrast(bundleStyle.bg,bundleStyle.color)>=4.5);
    const resources=first.locator('.component-execution:visible .component-resources');if(await resources.count()&&!await resources.evaluate(e=>e.open))await resources.locator(':scope>summary').click();
    for(const width of [390,1280,1600]){await page.setViewportSize({width,height:1100});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'No horizontal page overflow');await page.screenshot({path:path.join(evidence,theme+'-'+width+'.png'),fullPage:true});}

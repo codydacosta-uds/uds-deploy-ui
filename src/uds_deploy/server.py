@@ -19,6 +19,7 @@ WEB = Path(__file__).parent / 'web'
 STATIC_ASSETS = {
     'index.html':'text/html', 'app.js':'text/javascript', 'style.css':'text/css',
     'theme.js':'text/javascript', 'theme.css':'text/css',
+    'uds-logo.png':'image/png', 'uds-logo-on-dark.png':'image/png',
     **{'fonts/'+name:'font/woff2' for name in ('GitLabSans.woff2','GitLabSans-Italic.woff2','GitLabMono.woff2','GitLabMono-Italic.woff2')},
     **{'fonts/'+name:'text/plain' for name in ('GitLabSans-LICENSE.txt','GitLabMono-LICENSE.txt','NOTICE.txt')},
 }
@@ -79,7 +80,7 @@ def make_server(store, port=8765):
                 filename='index.html' if parts==[''] else '/'.join(parts)
                 if filename in STATIC_ASSETS:
                     kind=STATIC_ASSETS[filename]
-                    self.send_headers(200,kind if kind.startswith('font/') else kind+'; charset=utf-8')
+                    self.send_headers(200,kind if kind.startswith(('font/','image/')) else kind+'; charset=utf-8')
                     self.wfile.write((WEB/filename).read_bytes())
                     return
                 if parts==['api','processes']:

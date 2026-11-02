@@ -16,7 +16,7 @@ UDS or Zarf CLI already on your PATH. The report catalog is source-audited for
 **UDS 0.40.0 / Zarf 0.88.0**; other versions are best-effort, not certified.
 
 ```sh
-git clone --branch v0.1.0-preview.2 https://github.com/codydacosta-uds/uds-deploy-ui.git
+git clone --branch v0.1.0-preview.3 https://github.com/codydacosta-uds/uds-deploy-ui.git
 cd uds-deploy-ui
 ./uds-watch doctor
 ./uds-watch
@@ -28,8 +28,10 @@ not initialized or changed by this preview.
 
 The last command opens your browser. Leave that terminal running; Ctrl+C stops
 **only the viewer**, never your deployment. Use `--no-browser` to print its
-private loopback URL instead. If the port is occupied, reuse your existing
-viewer URL or run `./uds-watch --port 0` for an available port.
+private loopback URL instead. By default the viewer tries port 8765 and
+**automatically chooses a free loopback port if it is occupied**, without stopping
+the existing listener. `--port 0` always chooses a free port; an explicitly
+requested fixed `--port` is honored and errors if unavailable.
 
 ### Automatic capture: approve setup once, then deploy normally
 
@@ -162,6 +164,31 @@ UDS_LIVE_INTEGRATION=1 UDS_TEST_BINARY=/path/to/uds \
   python3 -m unittest discover -s tests -p test_real_cli.py -v
 ```
 
+To test the full deployment-first journey with real stock UDS and the real
+standalone viewer API:
+
+```sh
+UDS_USER_JOURNEY=1 UDS_TEST_BINARY=/path/to/uds \
+  PLAYWRIGHT_MODULE=/path/to/node_modules/playwright \
+  python3 -m unittest discover -s tests -p test_user_journey.py -v
+```
+
+This enables the hook in an isolated fake home, starts an action-only deployment
+**before** the watcher, then verifies live progress, completion, and byte-exact
+log downloads in both Bash and zsh. Browser handoff is recorded without opening
+an OS browser; the page is opened with normal Playwright launch and its default
+safety flags. It does not verify your OS's default-browser integration or touch
+its settings. No real cluster/application rollout is involved.
+
+To visually check a genuinely empty viewer (with no running deployment):
+
+```sh
+PLAYWRIGHT_MODULE=/path/to/node_modules/playwright node tests/test_empty_viewer_browser.cjs
+```
+
+This starts the real read-only server, verifies both UDS logo variants, empty-state
+contrast and responsive layout, and cleans up its own viewer/browser afterward.
+
 For Playwright against an existing private local capture, set
 `UDS_WATCHER_SOURCE_URL`, `UDS_WATCHER_CAPTURE_ID`, and `PLAYWRIGHT_MODULE`, then
 run `node tests/test_real_capture_browser.cjs`. It starts and cleans up a temporary
@@ -175,4 +202,6 @@ be identified as such. Do not redeploy real applications just to inspect styling
 
 Apache-2.0; see [LICENSE](LICENSE) and [NOTICE](NOTICE) for source attribution and
 standalone modifications. Bundled GitLab fonts retain their SIL OFL notices.
-Official product logos are not distributed. Product names do not imply endorsement.
+The header uses the same unmodified light/dark UDS artwork as the integrated
+viewer. Product artwork and trademarks remain their owners' property; the
+project's code license does not grant trademark rights or imply endorsement.

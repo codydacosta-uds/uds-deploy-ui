@@ -6,6 +6,8 @@
   const valid=value=>value==='dark'?'dark':'light';
   function apply(value){
     const theme=valid(value);document.documentElement.dataset.theme=theme;
+    document.querySelectorAll('.uds-logo-on-light').forEach(image=>{image.hidden=theme==='dark';});
+    document.querySelectorAll('.uds-logo-on-dark').forEach(image=>{image.hidden=theme!=='dark';});
     const button=document.getElementById('theme-toggle');
     if(button){button.hidden=false;button.setAttribute('aria-pressed',String(theme==='dark'));button.title='Switch to '+(theme==='dark'?'light':'dark')+' mode';}
   }

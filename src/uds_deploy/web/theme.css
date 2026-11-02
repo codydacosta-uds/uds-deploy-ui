@@ -1,6 +1,14 @@
 /* Standalone adaptation of Apache-2.0 watcher code; see NOTICE. */
-.watch-brand { font: 650 20px/1.2 var(--font-ui); color: #243746; white-space: nowrap; }
-html[data-theme=dark] .watch-brand { color: #ececef; }
+body[data-mode=live] #deployments-page .page-description,
+body[data-mode=live] #deployments-page .empty,
+body[data-mode=live] #deployments-page .cell-secondary,
+body[data-mode=live] #deployments-page .duration-cell,
+body[data-mode=live] #deployments-page .muted { color: #626b76; }
+body[data-mode=live] .deployment-table th { color: #4b5b66; }
+body[data-mode=live] .count-label { background: #e6e8ec; color: #555e69; }
+html[data-theme=dark] body[data-mode=live] #deployments-page :is(.page-description,.empty,.cell-secondary,.duration-cell,.muted) { color: var(--theme-muted); }
+html[data-theme=dark] body[data-mode=live] .deployment-table th { color: var(--theme-muted); }
+html[data-theme=dark] body[data-mode=live] .count-label { background: #343943; color: #d2d8e2; }
 /* Local, unmodified @gitlab/fonts 1.3.1; SIL OFL notices are in fonts/. */
 @font-face { font-family: 'GitLab Sans'; src: url('fonts/GitLabSans.woff2') format('woff2'); font-style: normal; font-weight: 100 900; font-display: swap; }
 @font-face { font-family: 'GitLab Sans'; src: url('fonts/GitLabSans-Italic.woff2') format('woff2'); font-style: italic; font-weight: 100 900; font-display: swap; }

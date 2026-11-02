@@ -12,5 +12,8 @@ unmodified font files, copyright/license notices, and source provenance are in
 src/uds_deploy/web/fonts/.
 
 This is an independent, unofficial project. UDS, Zarf, Defense Unicorns, GitLab,
-and other product names belong to their respective owners. No official product
-logos are distributed, and no affiliation or endorsement is implied.
+and other product names belong to their respective owners. The unmodified UDS
+logo artwork is the same light/dark artwork used in the original integrated
+viewer and identifies the supported product. UDS artwork and trademarks remain
+Defense Unicorns' property; this project's code license does not grant trademark
+rights. No affiliation or endorsement is implied.
