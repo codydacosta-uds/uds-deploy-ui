@@ -26,6 +26,21 @@ class NativeTests(unittest.TestCase):
         self.patches=[patch('uds_deploy.native.processes',return_value=[self.process]),patch('uds_deploy.native.open_files',return_value=self.files),patch('uds_deploy.native.metadata',return_value=(self.definition,{'actual-alias':self.package})),patch.dict(os.environ,{'KUBECONFIG':''})]
         for p in self.patches:p.start();self.addCleanup(p.stop)
     def refresh(self):self.reader.scanned=0;self.reader.refresh()
+    def test_parent_task_foreign_or_repeated_packages_disable_scoped_progress(self):
+        self.refresh();session=next(iter(self.reader.sessions.values()))
+        session['capture']={'task_owner':99,'record':self.root/'absent-record.json'}
+        self.output.write_text(json.dumps({'msg':'starting deploy','package':'foreign-package'})+'\n'+json.dumps({'msg':'processing component','name':'actual-component'})+'\n')
+        self.refresh()
+        self.assertTrue(session['skip_reports']);self.assertEqual(session['state']['reports'],[])
+        self.assertFalse(session['state']['source']['output_complete'])
+        self.assertIn('ambiguous',session['state']['source']['note'])
+        self.assertTrue(all(row['package'] is None for row in self.reader.events(session['state']['id'],logs=True)))
+        # A same-name short deployment missed between ps polls must also be
+        # caught by its repeated package start, not silently treated as one CLI.
+        session['skip_reports']=False;session['task_package_starts']={};session['file'].seek(0)
+        self.output.write_text((json.dumps({'msg':'starting deploy','package':'actual-zarf-name'})+'\n')*2)
+        self.refresh();self.assertTrue(session['skip_reports'])
+
     def test_messages_remain_reports_not_execution_or_success(self):
         for line in ('Ready; performing Helm upgrade','action succeeded',json.dumps(dict(msg='unrecognized operation')),json.dumps(dict(msg=['performing Helm upgrade']))):self.assertIsNone(report(line))
         for line in ('2026-11-01 12:00:00 INF performing Helm upgrade chart=real-chart',json.dumps(dict(msg='done pushing images',count=1,execution_package='impostor'))):

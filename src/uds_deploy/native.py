@@ -40,14 +40,16 @@ def command_args(args):
 
 def processes():
     output=subprocess.check_output(['ps','-axo','pid=,uid=,comm=,args=']).decode('utf-8',errors='replace')
-    found=[]
+    from .output import registered_deployments
+    registered=registered_deployments();found=[]
     for line in output.splitlines():
         fields=line.strip().split(None,3)
         if len(fields)!=4 or fields[1]!=str(os.getuid()):continue
-        try:args=shlex.split(fields[3])
+        registration=registered.get(int(fields[0]))
+        try:args=registration['args'] if registration else shlex.split(fields[3])
         except ValueError:continue
         if not args:continue
-        tool=Path(fields[2]).name
+        tool=registration['tool'] if registration else Path(fields[2]).name
         # macOS ps truncates a full-path comm (e.g. /opt/homebrew/bi).
         # Accept argv[0] only when that absolute comm is its matching prefix.
         if tool not in ('uds','zarf') and fields[2].startswith('/') and args[0].startswith(fields[2]):tool=Path(args[0]).name
@@ -110,6 +112,27 @@ def task_console(pid):
             sources=[r for r in open_files(int(current[0])) if r.get('type')=='REG' and r.get('fd') in ('1','2')]
             return sources if {r['fd'] for r in sources}=={'1','2'} and len({r['path'] for r in sources})==1 else []
     return []
+
+
+def task_capture(pid):
+    """Read a validated registered UDS task ancestor's captured output, not pipes."""
+    from .output import active_capture,registered_deployments
+    registered=registered_deployments();rows={}
+    output=subprocess.check_output(['ps','-axo','pid=,ppid=,uid='],timeout=3).decode()
+    for line in output.splitlines():
+        fields=line.split()
+        if len(fields)==3 and fields[2]==str(os.getuid()):rows[int(fields[0])]=int(fields[1])
+    current=pid
+    for _ in range(32):
+        current=rows.get(current)
+        if current is None:return None
+        entry=registered.get(current)
+        if not entry or entry['tool']!='uds' or command_args(entry['args'])[:1] not in (['run'],['r']):continue
+        capture=active_capture(current,open_files)
+        if capture and capture.get('task_root'):
+            if pid not in capture.get('deployments',[]):return {'pending':True}
+            return dict(capture,task_owner=current)
+    return None
 
 
 def metadata(bundle,uds):
@@ -382,15 +405,38 @@ class NativeReader:
             try:self.attach(process)
             except (OSError,ValueError,TypeError,AttributeError,KeyError,subprocess.SubprocessError):continue
         for session in self.sessions.values():
+            capture=session.get('capture')
+            if capture and capture.get('task_owner'):
+                try:
+                    root=json.loads(capture['record'].read_text())
+                    if root.get('task_ambiguous') or len(root.get('deployments',[]))>1:
+                        session['skip_reports']=True
+                        session['capture_ambiguity']='Full parent task output is captured, but multiple deployment processes make per-CLI progress ambiguous; inspect the task output.'
+                        session['state']['source'].update(output_complete=False,activity_available=False,note=session['capture_ambiguity'])
+                except (OSError,ValueError):pass
             self.read(session,finished=session['pid'] not in active_ids)
             if session.get('capture') and session['pid'] in active_ids:
                 if session['capture']['record'].exists():session.pop('capture_missing_since',None)
                 elif time.monotonic()-session.setdefault('capture_missing_since',time.monotonic())>2:
                     session['state']['source'].update(output_complete=False,activity_available=False,note='Output capture stopped while CLI is still running; check the deployment terminal')
-            if session['pid'] not in active_ids and session['state']['status']=='deploying':
+            backlog='file' in session and session['file'].tell()<os.fstat(session['file'].fileno()).st_size
+            draining=backlog
+            if session.get('integrity') is not None:
+                session['integrity'].seek(0);draining=draining or session['integrity'].read(1)==b'0'
+            if session['pid'] not in active_ids and session['state']['status']=='deploying' and not draining:
                 session['state'].update(status='unknown',completed_at=time.time(),error='CLI process exited. Its exit code is not observable by a late-attached watcher; check the deployment terminal.')
                 for p in session['state']['packages']:p['status']='unknown'
                 self.event(session,'process.exited',{})
+            integrity=session.get('integrity')
+            if integrity is not None:
+                integrity.seek(0);quality=integrity.read(1)
+                source=session['state']['source']
+                if quality==b'!' or backlog or quality!=b'1' and session['pid'] not in active_ids:
+                    source.update(output_complete=False,activity_available=False,note='Capture interrupted or final output still draining; inspect the deployment terminal. Completion is not inferred.')
+                elif not session.get('skip_reports'):
+                    source.update(output_complete=True,activity_available=True,note=session['capture_description'])
+            if session.get('skip_reports'):
+                session['state']['source'].update(output_complete=False,activity_available=False,note=session.get('capture_ambiguity','Task progress attribution is ambiguous; inspect the captured task output.'))
             self.check_helm(session)
     def attach(self,process):
         records=open_files(process['pid']);cwd=next((r['path'] for r in records if r['fd']=='cwd'),None)
@@ -406,6 +452,7 @@ class NativeReader:
         capture=None
         if not sources:
             capture=active_capture(process['pid'],open_files)
+            if not capture:capture=task_capture(process['pid'])
             if capture and capture.get('pending'):
                 first=self.capture_wait.setdefault(process['pid'],time.monotonic())
                 if time.monotonic()-first<2:return
@@ -413,10 +460,10 @@ class NativeReader:
             if capture:
                 pipes=[r for r in records if r.get('fd') in ('1','2') and r.get('type') in ('PIPE','FIFO')]
                 keys={pipe_key(r) for r in pipes}
-                complete={r['fd'] for r in pipes}=={'1','2'} and None not in keys and len(keys)==1
+                complete=capture.get('registered_stdio') is True or {r['fd'] for r in pipes}=={'1','2'} and None not in keys and len(keys)==1
                 if complete:
                     sources=[dict(fd='1',type='REG',path=str(capture['path']))]
-                    description='Task-captured stdout/stderr; full CLI session'
+                    description='Task-captured stdout/stderr; full CLI session'+(' (parent uds run output)' if capture.get('task_owner') else '')
                 else:capture=None  # Never bind an unrelated/split pipe to a full capture.
         if not sources:
             sources=task_console(process['pid'])
@@ -456,6 +503,9 @@ class NativeReader:
         documents={'package:'+key:deepcopy(value) for key,value in packages.items() if artifact_info(value)['has_yaml']}
         if definition.get('kind')=='UDSBundle':documents['bundle']=deepcopy(definition)
         self.sessions[run]=dict(capture=capture,documents=documents,pid=process['pid'],file=path.open('rb'),partial=b'',state=state,events=deque(maxlen=500),log_index=[],sequence=0,line_sequence=0,offset=0,checked=0,definitions=packages,binary=binary,action_labels={},owners=definition_owners(packages))
+        if capture and capture.get('integrity'):
+            self.sessions[run]['integrity']=capture['integrity'].open('rb',buffering=0)
+            self.sessions[run]['capture_description']=description
         self.sessions[run]['action_labels']=action_labels(packages)
         self.sessions[run]['action_names']=action_names(packages)
         self.sessions[run]['action_declarations']=action_declarations(packages)
@@ -465,7 +515,7 @@ class NativeReader:
         identifier=session['sequence']
         if kind=='log':
             session['line_sequence']+=1;identifier=session['line_sequence'];session['state']['log_cursor']=identifier
-        single=session['state']['packages'][0] if len(session['state']['packages'])==1 and kind=='log' else None
+        single=session['state']['packages'][0] if len(session['state']['packages'])==1 and kind=='log' and not session.get('skip_reports') else None
         session['events'].append(dict(id=identifier,event_cursor=session['sequence'],run=session['state']['id'],type=kind,timestamp=time.time(),data=data,package=single['id'] if single else None,attempt=single['attempts'][0]['id'] if single else None))
     def read(self,session,finished=False):
         output=session['file']
@@ -480,7 +530,20 @@ class NativeReader:
             if session['line_sequence']%128==0:session['log_index'].append((session['line_sequence'],start))
             decoded=raw.decode('utf-8',errors='replace')
             self.event(session,'log',dict(raw=decoded,text=decoded,raw_b64=base64.b64encode(raw).decode(),level='unclassified',process_id=str(session['pid'])))
-            item=report(decoded)
+            item=None if session.get('skip_reports') or (session.get('capture') or {}).get('task_owner') and session['state'].get('completed_at') else report(decoded)
+            if item and (session.get('capture') or {}).get('task_owner') and item['kind']=='package.start':
+                # Short children can finish between process metadata polls.
+                # Reject foreign/repeated package streams as well as observed
+                # multiple PIDs; never borrow another task command's progress.
+                expected={}
+                for alias,definition in session['definitions'].items():
+                    name=definition.get('metadata',{}).get('name',alias);expected[name]=expected.get(name,0)+1
+                observed=session.setdefault('task_package_starts',{})
+                name=item.get('resource');observed[name]=observed.get(name,0)+1
+                if observed[name]>expected.get(name,0):
+                    session['skip_reports']=True
+                    session['capture_ambiguity']='Parent task contains foreign or repeated package executions; per-CLI progress is ambiguous. Full task output remains available.'
+                    item=None
             if item:
                 if item.get('action_id') in session['action_labels']:item['label']=session['action_labels'][item['action_id']]
                 if item.get('action_id') in session.get('action_names',{}):item['resource']=session['action_names'][item['action_id']]
@@ -562,7 +625,7 @@ class NativeReader:
                     if not raw:break
                     index+=1
                     text=raw.decode('utf-8',errors='replace')
-                    single=session['state']['packages'][0] if len(session['state']['packages'])==1 else None
+                    single=session['state']['packages'][0] if len(session['state']['packages'])==1 and not session.get('skip_reports') else None
                     if package and (not single or package!=single['id']) or attempt and (not single or attempt!=single['attempts'][0]['id']):continue
                     if index<=after or before is not None and index>=before:continue
                     if filters.get('search') and filters['search'].lower() not in text.lower():continue
@@ -578,4 +641,6 @@ class NativeReader:
             rows.insert(0,dict(id=cursor,event_cursor=cursor,run=run,type='observer.gap',timestamp=time.time(),package=None,attempt=None,data={'reason':'Live event buffer advanced; original file remains available'}))
         return rows[-limit:] if latest else rows[:limit]
     def close(self):
-        for session in self.sessions.values():session['file'].close()
+        for session in self.sessions.values():
+            session['file'].close()
+            if session.get('integrity') is not None:session['integrity'].close()
