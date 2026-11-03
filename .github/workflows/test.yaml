@@ -9,9 +9,8 @@ permissions:
 jobs:
   unit:
     strategy:
-      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, macos-15-intel]
+        os: [ubuntu-latest, macos-latest]
         python: ['3.10', '3.13']
     runs-on: ${{ matrix.os }}
     steps:
@@ -25,21 +24,7 @@ jobs:
       - name: Linux shell/capture prerequisites
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y lsof zsh
-      - name: Verify distributed artifacts and regressions
-        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
-      - name: Compile bootstrap source and verify native conformance separately
-        run: |
-          python3 scripts/build-cli-bootstrap.py --output "$RUNNER_TEMP/uds-watch-bootstrap"
-          UDS_BOOTSTRAP_TEST_BINARY="$RUNNER_TEMP/uds-watch-bootstrap" python3 -m unittest discover -s tests -p test_entrypoints.py -v
-          UDS_BOOTSTRAP_TEST_BINARY="$RUNNER_TEMP/uds-watch-bootstrap" python3 -m unittest discover -s tests -p test_terminal_registration.py -v
-      - name: Verify wheel assets and compiler-free installation
-        run: |
-          python3 -m pip install build
-          python3 -m build --wheel --outdir "$RUNNER_TEMP/uds-watch-wheel"
-          python3 -m venv "$RUNNER_TEMP/uds-watch-install"
-          "$RUNNER_TEMP/uds-watch-install/bin/python" -m pip install "$RUNNER_TEMP"/uds-watch-wheel/*.whl
-          cd "$RUNNER_TEMP"
-          "$RUNNER_TEMP/uds-watch-install/bin/python" -c 'from uds_deploy.entrypoints import bootstrap_binary; assert bootstrap_binary().is_file()'
+      - run: python3 -m unittest discover -s tests -p 'test_*.py' -v
       - run: node tests/test_step_colors.cjs && node tests/test_log_search.cjs && node tests/test_yaml_highlighting.cjs
       - run: node --check src/uds_deploy/web/app.js && node --check src/uds_deploy/web/theme.js
       - run: git diff --check

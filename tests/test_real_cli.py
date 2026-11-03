@@ -23,7 +23,7 @@ from uds_deploy.output import active_capture
 
 @unittest.skipUnless(os.environ.get('UDS_LIVE_INTEGRATION')=='1','Opt-in real action-only SDK test')
 class RealCLITests(unittest.TestCase):
-    def test_hook_native_capture_exit_and_interrupt(self):
+    def test_task_capture_native_exit_and_interrupt(self):
         uds=os.environ.get('UDS_TEST_BINARY') or shutil.which('uds');self.assertTrue(uds)
         with tempfile.TemporaryDirectory(prefix='uds-watch-sdk-') as directory:
             root=Path(directory);(root/'bin').mkdir();(root/'bin/uds').symlink_to(uds);(root/'home').mkdir();artifacts=root/'artifacts';artifacts.mkdir()
@@ -44,30 +44,27 @@ class RealCLITests(unittest.TestCase):
             bundle=next(artifacts.glob('uds-bundle-*.tar.zst'));zarf=next(artifacts.glob('zarf-package-*.tar.zst'))
             cases=[('bash',True,'deploy',False),('zsh',True,'deploy',False),('bash',False,'deploy',True),('bash',True,'deploy',True),('zsh',False,'deploy',True),('zsh',True,'deploy',True),('bash',True,'zarf',False)]
             results={}
-            for shell,hook,verb,interrupt in cases:
+            for shell,captured,verb,interrupt in cases:
                 binary=shutil.which(shell)
                 if not binary:continue
-                with self.subTest(shell=shell,hook=hook,verb=verb,interrupt=interrupt):
+                with self.subTest(shell=shell,captured=captured,verb=verb,interrupt=interrupt):
                     for file in (marker,release):
                         if file.exists():file.unlink()
                     outcome.write_text('fail')
                     args=['--log-level','info']+(['deploy',str(bundle)] if verb=='deploy' else ['zarf','package','deploy',str(zarf)])+['-a','amd64','--confirm','--no-progress','--skip-signature-validation']
-                    startup=root/('startup-'+shell)
-                    if hook and not startup.exists():
-                        configured=subprocess.run([str(ROOT/'uds-watch'),'setup','--yes','--shell',shell,'--tool','uds','--rc-file',str(startup)],env=env,capture_output=True,timeout=10)
-                        self.assertEqual(configured.returncode,0,'Isolated shell setup failed')
-                    prefix='. "$1"; shift 2; ' if hook else 'shift 2; '
-                    command=prefix+'uds "$@"'
+                    status='${pipestatus[1]}' if shell=='zsh' else '${PIPESTATUS[0]}'
+                    helper=shlex.join([sys.executable,str(ROOT/'src/uds_deploy/capture.py')])
+                    command='shift 2; uds "$@"'+(' 2>&1 | ('+helper+' || cat); exit "'+status+'"' if captured else '')
                     output=root/'terminal.log'
                     with output.open('wb') as console:
-                        task=subprocess.Popen([binary,'-c',command,'sdk-probe',str(startup if hook else ROOT/'uds-watch'),shell]+args,env=env,cwd=root,stdout=console,stderr=subprocess.STDOUT,start_new_session=True)
+                        task=subprocess.Popen([binary,'-c',command,'sdk-probe',str(ROOT/'uds-watch'),shell]+args,env=env,cwd=root,stdout=console,stderr=subprocess.STDOUT,start_new_session=True)
                     reader=NativeReader()
                     try:
                         deadline=time.monotonic()+20
                         while not marker.exists():
                             self.assertIsNone(task.poll(),'Real SDK action exited before readiness')
                             self.assertLess(time.monotonic(),deadline,'Real SDK action readiness timed out');time.sleep(.03)
-                        if hook:
+                        if captured:
                             rows=subprocess.check_output(['ps','-axo','pid=,args='],text=True);pid=None
                             for line in rows.splitlines():
                                 fields=line.strip().split(None,1)
@@ -87,8 +84,8 @@ class RealCLITests(unittest.TestCase):
                                 self.assertTrue(any(r['kind']=='actions.command' for r in session['state']['reports']))
                         if interrupt:os.killpg(task.pid,signal.SIGINT)
                         else:release.touch()
-                        code=task.wait(timeout=15);results[(shell,hook,verb,interrupt)]=code;self.assertNotEqual(code,0)
-                        if hook:
+                        code=task.wait(timeout=15);results[(shell,captured,verb,interrupt)]=code;self.assertNotEqual(code,0)
+                        if captured:
                             reader.read(session,finished=True);session['file'].seek(0);raw=session['file'].read()
                             self.assertEqual(raw,output.read_bytes(),'Capture and deployment terminal must contain identical original bytes')
                             if not interrupt:self.assertIn(b'SDK stdout marker',raw);self.assertIn(b'SDK stderr marker',raw)
@@ -99,7 +96,7 @@ class RealCLITests(unittest.TestCase):
                             # Only this explicitly created isolated SDK process group.
                             os.killpg(task.pid,signal.SIGINT);task.wait(timeout=15)
             for shell in ('bash','zsh'):
-                if (shell,False,'deploy',True) in results and (shell,True,'deploy',True) in results:self.assertEqual(results[(shell,False,'deploy',True)],results[(shell,True,'deploy',True)],'The hook must preserve native Ctrl+C status')
+                if (shell,False,'deploy',True) in results and (shell,True,'deploy',True) in results:self.assertEqual(results[(shell,False,'deploy',True)],results[(shell,True,'deploy',True)],'The task tee must preserve native Ctrl+C status')
             self.assertEqual(results[('bash',True,'deploy',False)],1)
             self.assertEqual(list(root.rglob('*.sqlite3')),[])
 

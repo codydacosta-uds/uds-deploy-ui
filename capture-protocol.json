@@ -1,5 +1,5 @@
 {
   "schema": 1,
   "description": "Shared output-only capture protocol; vendor identical uds_deploy/output.py bytes in every consumer.",
-  "sha256": "09385db37e799182eeca97732e0295146c087f2ead77df6225fe059211a68758"
+  "sha256": "e0d8e40fcabf6e8c29694ce5a0094e2dad58313ebd88750f7e307945cde798d3"
 }
