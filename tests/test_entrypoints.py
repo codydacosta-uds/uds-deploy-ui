@@ -92,6 +92,7 @@ class EntrypointTests(unittest.TestCase):
             try:
                 os.killpg(process.pid,signal.SIGINT);out,_=process.communicate(timeout=5)
                 self.assertEqual(process.returncode,130);self.assertIn(b'native interrupt cleanup',out)
+                while capture['record'].exists():self.assertLess(time.monotonic(),deadline);time.sleep(.02)
                 self.assertEqual(held.read(),out);self.assertFalse(capture['record'].exists())
             finally:held.close()
         finally:
@@ -154,7 +155,12 @@ class EntrypointTests(unittest.TestCase):
                 output,_=process.communicate(timeout=5)
                 self.assertEqual(process.returncode,0)
                 self.assertEqual(output.count(b'x'),1048576)
-                self.assertEqual(integrity.read(),b'!','An interrupted capture must never certify complete output')
+                deadline=time.monotonic()+3
+                while True:
+                    integrity.seek(0);quality=integrity.read()
+                    if quality!=b'0':break
+                    self.assertLess(time.monotonic(),deadline);time.sleep(.02)
+                self.assertEqual(quality,b'!','An interrupted capture must never certify complete output')
         finally:
             Path(str(marker)+'.release').touch()
             if process.poll() is None:process.communicate(timeout=5)

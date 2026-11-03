@@ -114,6 +114,12 @@ static void cleanup_capture(const char *record){
  const char *names[]={"/capture.json","/ready.json","/console.log","/integrity"};
  for(int i=0;i<4;i++){strcpy(path+length-13,names[i]);unlink(path);}path[length-13]=0;rmdir(path);
 }
+static void stop_worker(pid_t worker){
+ /* Only our optional capture child, never the native invocation. A stopped
+  * child must not turn teardown into an unbounded wait on any platform. */
+ kill(worker,SIGKILL);kill(worker,SIGCONT);
+ for(int i=0;i<50;i++){if(waitpid(worker,NULL,WNOHANG)!=0)break;usleep(20000);}
+}
 static void guardian(int caller,char **fields,int argc,char **argv,pid_t native_pid){
  int pair[2];if(socketpair(AF_UNIX,SOCK_STREAM,0,pair)){close(caller);_exit(0);}
  pair[0]=highfd(pair[0]);pair[1]=highfd(pair[1]);pid_t worker=fork();
@@ -131,16 +137,18 @@ static void guardian(int caller,char **fields,int argc,char **argv,pid_t native_
  int handles[4]={-1,-1,-1,-1};char message[8192];int count=receive(pair[0],2500,handles,4,message,1);
  int streams=message[0]=='1'?1:message[0]=='2'?2:0;
  if(count>0&&receive_path(pair[0],message+1,sizeof(message)-1))streams=0;
- if(!streams||count!=streams*2){sendfds(caller,'0',NULL,0);close(caller);close(pair[0]);kill(worker,SIGKILL);while(waitpid(worker,NULL,0)<0&&errno==EINTR){};_exit(0);}
+ if(!streams||count!=streams*2){sendfds(caller,'0',NULL,0);close(caller);close(pair[0]);stop_worker(worker);_exit(0);}
  int readers[2]={handles[0],-1},writers[2]={handles[1],-1};if(streams==2){readers[1]=handles[2];writers[1]=handles[3];}
- if(sendfds(caller,message[0],writers,streams)){close(caller);close(pair[0]);for(int i=0;i<count;i++)close(handles[i]);broken_capture(message+1);kill(worker,SIGKILL);while(waitpid(worker,NULL,0)<0&&errno==EINTR){};cleanup_capture(message+1);_exit(0);}
+ if(sendfds(caller,message[0],writers,streams)){close(caller);close(pair[0]);for(int i=0;i<count;i++)close(handles[i]);broken_capture(message+1);stop_worker(worker);cleanup_capture(message+1);_exit(0);}
  close(caller);for(int i=0;i<streams;i++)close(writers[i]);
  drain(readers,streams,pair[0],message+1);
+ /* Native EOF belongs to the caller, not optional Python log teardown. */
+ close(1);close(2);
  int status=0;pid_t done=0;
  for(int i=0;i<50&&done==0;i++){done=waitpid(worker,&status,WNOHANG);if(done==0)usleep(20000);}
- if(done==0){broken_capture(message+1);kill(worker,SIGKILL);while(waitpid(worker,&status,0)<0&&errno==EINTR){}}
+ if(done==0){broken_capture(message+1);stop_worker(worker);}
  if(!WIFEXITED(status)||WEXITSTATUS(status)!=0)broken_capture(message+1);
- cleanup_capture(message+1);close(1);close(2);_exit(0);
+ cleanup_capture(message+1);_exit(0);
 }
 int main(int argc,char **argv){
  char executable[PATH_MAX];
