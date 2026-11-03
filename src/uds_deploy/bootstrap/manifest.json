@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "sha256": {
+    "darwin-arm64": "7f69e229582c4458f75644abee11ee89f0d60c946a27907d5b425b17b102e70a",
+    "darwin-x86_64": "6259673b0f31822c743b92c47fab7d39e5e28b6ba36d58dda7b3757ea4fe8d55",
+    "linux-aarch64": "46e3d7311c835c7b200b7ea33b49ecfc0e8544d3016e350f383c6eaeccc8e28a",
+    "linux-x86_64": "83f2e2438b649a453d6b2da071d6facb8ade817ae8020b1355966da48ad5f886"
+  },
+  "source_sha256": "61246fbd7a0564788f61f8771a37e35c7499affbdd4e701e0602dba539ce43a0"
+}

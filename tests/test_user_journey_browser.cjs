@@ -35,6 +35,9 @@ async function until(test,message,timeout=25000){const deadline=Date.now()+timeo
   assert.ok((await response.body()).equals(fs.readFileSync(manifest.terminal)),'End-to-end download must exactly match the original native CLI output');
   assert.ok((await response.body()).includes(Buffer.from('JOURNEY stdout')));assert.ok((await response.body()).includes(Buffer.from('JOURNEY stderr')));
   await page.screenshot({path:path.join(manifest.evidence,manifest.shell+'-03-finished-dark.png'),fullPage:true});
+  await page.setViewportSize({width:390,height:844});await page.evaluate(()=>document.fonts.ready);await page.screenshot({path:path.join(manifest.evidence,manifest.shell+'-04-finished-dark-390.png'),fullPage:true});
+  await page.locator('#theme-toggle').click();await page.screenshot({path:path.join(manifest.evidence,manifest.shell+'-05-finished-light-390.png'),fullPage:true});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Mobile viewport must not overflow horizontally');
   assert.deepEqual(errors,[]);assert.deepEqual(writes,[]);
   fs.writeFileSync(path.join(manifest.evidence,manifest.shell+'-result.json'),JSON.stringify({capture_mode:manifest.capture_mode||'hook',cli_browser_handoff_verified:true,browser_launched_by_playwright:true,os_default_browser_tested:false,deploy_started_before_viewer:true,late_attach_full_output:true,live_transition:true,native_exit:0,download_byte_exact:true,read_only:true},null,2));
   console.log('Deploy-first user journey passed ('+manifest.shell+', '+(manifest.capture_mode||'hook')+'): CLI browser handoff recorded, normal Playwright launch, actual NativeReader late-attached, live steps advanced, completed state and original bytes matched. Evidence: '+manifest.evidence);

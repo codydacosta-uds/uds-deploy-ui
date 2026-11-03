@@ -2,251 +2,253 @@
 
 A lightweight, **read-only** browser watcher for UDS and Zarf deployments.
 
-See **Bundle → Package → Component → Steps**, inspect full packaged YAML with
-syntax highlighting, and jump from an activity card to its original CLI output.
-Light and dark themes are included. No frontend build, database, cloud account,
-cluster installation, or Python runtime dependencies are required.
+See **Bundle → Package → Component → Steps**, inspect full packaged YAML, and
+jump from an activity card to original CLI output. Light/dark themes are included.
+No frontend build, database, cloud account, cluster installation, background
+service, telemetry, or Python runtime dependencies are required.
 
 This is an independent, unofficial project—not an upstream UDS/Zarf component.
 
 ## Quick start
 
-Requirements: **macOS or Linux**, **Python 3.10+**, `ps`, `lsof`, `zstd`, and the
-UDS or Zarf CLI already on your PATH. The report catalog is source-audited for
-**UDS 0.40.0 / Zarf 0.88.0**; other versions are best-effort, not certified.
+Requirements: **macOS or Linux**, **Python 3.10+**, `ps`, `lsof`, `zstd`, and an
+existing UDS/Zarf CLI. For example, `lsof` is installed with `dnf install lsof`
+on RHEL, not with Homebrew. The report catalog is audited for **UDS 0.40.0 /
+Zarf 0.88.0**; other versions are best-effort, not certified.
 
 ```sh
-git clone --branch v0.1.0-preview.4 https://github.com/codydacosta-uds/uds-deploy-ui.git
+git clone https://github.com/codydacosta-uds/uds-deploy-ui.git
 cd uds-deploy-ui
 ./uds-watch doctor
-./uds-watch
+./uds-watch setup --cli /path/to/uds
 ```
 
-This initial public preview is pinned to a version tag; cloning it checks out
-that tested version in detached-HEAD mode. The repository's default branch is
-not initialized or changed by this preview.
-
-The last command opens your browser. Leave that terminal running; Ctrl+C stops
-**only the viewer**, never your deployment. Use `--no-browser` to print its
-private loopback URL instead. By default the viewer tries port 8765 and
-**automatically chooses a free loopback port if it is occupied**, without stopping
-the existing listener. `--port 0` always chooses a free port; an explicitly
-requested fixed `--port` is honored and errors if unavailable.
-
-### Automatic capture: approve setup once, then deploy normally
-
-On its **first interactive launch**, `./uds-watch` asks whether to enable automatic
-capture. Answer **y** to add a small, clearly marked startup block. Nothing is
-edited without your approval. Declining is remembered; use `./uds-watch setup`
-if you change your mind. Use `./uds-watch --no-setup` to skip the prompt.
-Non-interactive viewer launches never prompt or edit startup files.
-
-After approving, **open a new deployment terminal**. Existing terminals cannot
-be changed by a child process. Leave the viewer running and deploy as usual:
+Setup displays the selected executable and asks for explicit approval. It does
+not deploy anything. **Complete setup before starting your deployment.** Then
+use your normal commands, with or without the viewer running:
 
 ```sh
 uds deploy path/to/bundle.tar.zst --confirm
-# Or, when using standalone Zarf:
-zarf package deploy path/to/package.tar.zst --confirm
+# Scripts, ./uds, configured absolute paths, and uds run work too.
 ```
 
-You can also configure capture explicitly:
+Open the viewer from another terminal, even after the deployment starts:
 
 ```sh
-./uds-watch setup                 # shows files and asks for approval
-./uds-watch setup --yes           # explicitly approved unattended setup
-./uds-watch setup --shell bash    # choose a shell explicitly
-./uds-watch uninstall             # remove only the managed startup block
+/path/to/uds-deploy-ui/uds-watch
 ```
 
-For zsh, setup uses `$ZDOTDIR/.zshrc` or `~/.zshrc`. For Bash, it configures
-`~/.bashrc` and the existing login startup file (or creates `~/.bash_profile` if
-none exists). This supports both login and non-login terminals. A shared
-`.profile` block is guarded for the selected shell. For nonstandard dotfiles,
-use `setup --rc-file /actual/startup/file --shell zsh`; select the same file when
-uninstalling. Symlinked, hard-linked, read-only, or invalid-syntax startup files
-are refused rather than silently replaced.
+It opens a private loopback URL. Keep that terminal running; Ctrl+C stops **only
+the viewer**, never the deployment. `--no-browser` prints the URL instead.
+The default port is 8765, with a free-port fallback if occupied. `--port 0` always
+chooses a free port; an explicitly requested fixed port is respected.
 
-### Does this change or replace UDS?
+For an SSH tunnel, use the **same local and remote port** because the server
+validates the Host header. Tunnel from the browser's machine and open the full
+private URL printed by the remote viewer. Restarting a viewer changes its URL;
+it also loses any finished captures held only by that viewer. Do not restart a
+viewer holding logs you still need.
 
-**No UDS/Zarf binary or deployment configuration is edited.** With your consent,
-setup adds optional shell functions named `uds` and `zarf`. They call the actual
-native binaries with unchanged arguments and copy output to your terminal and
-a private temporary capture. Unrelated commands pass through; unknown global
-flag arity is not guessed. The native CLI's exit status is returned, and Ctrl+C
-is handled by the CLI while the capture helper drains its cleanup output.
+## One-time, reversible CLI registration
 
-Safety measures:
+```sh
+./uds-watch setup                         # discover PATH/current-directory CLIs
+./uds-watch setup --cli /path/to/uds       # choose one native executable
+./uds-watch setup --cli /path/to/uds --cli /other/path/zarf
+./uds-watch setup --yes --cli /path/to/uds  # explicitly approved unattended setup
+./uds-watch uninstall --cli /path/to/uds   # restore it, after commands finish
+./uds-watch uninstall                     # restore all recorded registrations
+```
 
-- Existing aliases and custom functions are **not overwritten**. A conflicting
-  wrapper stays in control and capture is skipped until you resolve it explicitly.
-- Existing startup bytes are retained outside the managed block. Syntax is
-  checked without executing your configuration. Edits are atomic, repeatable,
-  and reversible; detected concurrent edits are refused.
-- Backups are kept under `~/.config/uds-watch/backups` (or `$XDG_CONFIG_HOME`),
-  with directory mode 0700 and file mode 0600. **They may contain sensitive existing
-  shell settings**; they stay local and are never served, uploaded, or printed.
-- Uninstall removes only the managed block and preserves later user edits. It
-  does not blindly restore a backup over your changes. Open a new terminal
-  afterward; existing terminal functions remain unchanged.
-- If the clone is moved/deleted or the native CLI is absent, the startup block
-  safely skips loading the hook. It does not prevent your shell from opening.
-- Capture combines stdout/stderr. Piping can change animated progress rendering;
-  interactive input remains in your deployment terminal. This is not a promise
-  of compatibility with every custom wrapper or future CLI version.
+On the first interactive viewer launch, setup is also offered once. Declining is
+remembered. `--no-setup` skips this prompt; non-interactive launches never prompt
+or change executables automatically. Ordinary setup does **not** edit shell
+startup files, scripts, deployment tasks, or deployment configuration.
 
-**Manual, current-terminal-only option:** if you do not want startup files edited,
-use `eval "$(/path/to/uds-deploy-ui/uds-watch shell-init)"`. Add `--tool zarf` for
-standalone Zarf. This command only prints shell code and never edits files.
-If you enabled the watcher function in that terminal, `unset -f uds` disables
-it; do not unset your own unrelated custom functions.
+### What changes on disk?
 
-For scripts or existing deployment tasks, an output-only stdin tee is available
-as `uds-watch capture`. The caller must preserve the native CLI's pipeline exit
-status; the interactive shell hook handles that automatically.
+**Yes, the selected executable entrypoint is replaced, with your approval.**
+Its original native bytes and permissions are preserved beside it, for example:
 
-For `uds run` deployments, the task must already include an output-only tee;
-SONIC's instrumented deployment tasks provide this. The standalone shell hook
-wraps direct deploy commands, not arbitrary `uds run` tasks. You can start the
-viewer after the deployment begins, provided capture was active at command start.
-Uncaptured terminal output cannot be recovered retroactively.
+```text
+/path/to/uds                                  forwarding launcher
+/path/to/.uds.uds-watch-native-<id>/uds        unchanged native executable
+/path/to/.uds.uds-watch-native-<id>/invoke.py  output-copy helper
+```
 
-SONIC and standalone use the same per-user, host-local capture directory and
-identical `uds_deploy/output.py` protocol, pinned by `capture-protocol.json`.
-Readers also accept the earlier standalone directory without migrating or deleting
-its files. An explicit `UDS_DEPLOY_RUNTIME_DIR` is respected without searching
-other namespaces. Ownership, private permissions, helper ancestry, held file and
-matching pipe identities are checked before a capture is read.
+The original invocation process **execs the preserved native executable**, keeping
+its PID, argv (including argv[0]), environment, cwd, stdin and native exit/signal
+status. A small native forwarder copies newly allocated output channels to the
+original stdout/stderr. Python receives only a bounded, best-effort copy for the
+viewer: its crash, stalled logging, missing files, or a closed viewer cannot
+cancel the native command or consume output still waiting to reach the terminal.
+Dropped/interrupted captures are marked incomplete, never used to infer Done.
 
-## What the watcher does—and does not do
+For terminal output, invocation-owned PTYs preserve `isatty`, normal interactive
+input/output and window resizing. Stdin and the existing controlling terminal
+are not read or replaced by capture. This is **not** identical TTY device
+identity, nor certification of arbitrary full-screen tools/custom terminal
+control modes. Regular redirected output keeps its separate stdout/stderr bytes.
+Do not kill the native forwarding process or remove the preserved executable
+while a command is running; those are the invocation's output path/executable,
+not the viewer or optional Python capture worker.
 
-- Observes same-user UDS/Zarf process metadata and supported local `.tar.zst`
-  artifacts. It never reads terminal devices, scrollback, or another process's pipe.
-- Reads bounded artifact metadata, not a second extracted image payload.
-- Serves a capability-protected URL on **127.0.0.1 only**. All mutation APIs are
-  denied; there is no deployment engine, cancellation, retry API, or scheduler.
-- Shows explicit CLI reports plus green **Done** inferred when the same sequential
-  CLI advances without a reported error. Inferred completion is disclosed in details.
-- Does **not** treat process disappearance, image transfer percentage, or silence
-  as authoritative success. A non-child process's exit code is unknown.
-- Shows full **packaged** config values and commands. External `uds-config.yaml`,
-  CLI overrides, resolved credentials, live Helm values, and kubeconfig contents
-  are not copied into the viewer.
-- Optionally reads independent Kubernetes readiness/revision metadata **only**
-  when `KUBECONFIG` is explicitly set in the viewer's environment. The ambient
-  default cluster context is never queried.
-- Keeps current-session state in memory. Temporary capture files are private
-  (directories 0700; files 0600) and removed when their capture ends. An attached
-  viewer can retain its open descriptor until it stops. Download logs first if
-  you need to retain them.
+Safety and scope:
 
-Keep the viewer URL, packaged definitions, and original logs private: packaged
-values or CLI output can contain sensitive information. There is no telemetry,
-external font request, or external JavaScript request.
+- Register **each distinct executable installation** that scripts/tasks use.
+  An unrelated new CLI copy is not automatically intercepted. Do not copy a
+  managed launcher to create another installation; register a native CLI instead.
+- Selected files must be owned, writable native ELF/Mach-O files named `uds` or
+  `zarf`. Symlink selections, hard links, privileged files, and externally
+  writable executables are refused. PATH discovery shows resolved real files.
+  Do not use sudo to bypass these checks; use a user-owned installation.
+- Existing aliases/functions are untouched. They capture only when they actually
+  invoke a registered executable. Legacy shell functions can produce duplicate
+  captures; remove only the watcher's managed hook when migrating.
+- Uninstall refuses a running CLI. It restores the **current** preserved native
+  executable, including a native self-update, without reverting user files.
+  To replace an installation externally: finish commands, uninstall capture,
+  update the CLI, then register it again. If an external updater overwrites the
+  launcher, setup/uninstall refuses to guess; retain the preserved directory.
+- Keep the clone/installed Python interpreter in place while registered. If the
+  optional Python/helper package disappears, forwarding falls back to native
+  execution without capture. Uninstall before relocating/removing the project.
+- Registration bookkeeping is private under `$XDG_CONFIG_HOME/uds-watch` or
+  `~/.config/uds-watch`. No shell config, credentials or resolved environment is
+  copied into it.
 
-Remote OCI-only deployments without an authoritative local artifact are not yet
-supported. Windows is not supported. There is no promise of complete lifecycle
-reporting from every stock CLI version.
+### `uds run` and ambiguous output
+
+UDS 0.40 rewrites task commands such as `./uds` to its own native executable
+path. Registered `uds run` therefore also captures its **whole parent task
+output**, without changing tasks. Package progress is scoped only when it can
+be attributed safely. Multiple observed deployment processes, foreign/repeated
+package executions, or other ambiguity disable per-CLI completion inference;
+the full task output remains available with an explicit warning. Direct
+registered invocations in scripts have their own separate captures.
+
+This is not retroactive terminal recording. Setup must precede the invocation.
+Temporary captures disappear at EOF; a viewer already attached retains its held
+file descriptors until it closes. There is no permanent history or service.
+
+### Distributed bootstrap executables
+
+Registration uses small bundled, source-reviewed bootstraps: **Darwin ARM64 /
+x86_64** and **Linux AArch64 / x86_64**, built against glibc 2.28 for Linux.
+macOS minimum targets are 11.0 ARM64 / 10.15 Intel. Setup verifies their hashes
+and executes a harmless bootstrap ABI probe **before changing a CLI**. There is
+no runtime compiler, download or package installation. Unsupported ABIs refuse
+registration; existing task captures can still be viewed.
+
+The C source is `src/uds_deploy/cli_bootstrap.c`; hashes/source provenance are
+in `src/uds_deploy/bootstrap/manifest.json`. These are this project's forwarding
+executables, **not bundled UDS/Zarf CLI binaries**.
+
+## Legacy/manual integration
+
+The older shell-function installer remains explicitly available:
+
+```sh
+./uds-watch setup --legacy-shell-hook --shell bash
+./uds-watch uninstall --legacy-shell-hook --shell bash
+```
+
+It changes only a managed startup block, uses private backups, validates syntax
+without executing startup contents, and requires a new terminal. It does **not**
+cover arbitrary scripts, `./uds`, or every `uds run` path. For nonstandard startup
+files, use `--rc-file /path/to/startup --shell zsh` for both setup and uninstall.
+
+`shell-init` prints a current-terminal-only function; `capture` is an output-only
+stdin tee for explicitly wired tasks. Callers of that tee must preserve the
+native pipeline status. SONIC's existing tasks already do this and do not need
+executable registration. Existing aliases/custom functions are not overwritten.
+
+SONIC and standalone share the same private per-user capture convention and
+`uds_deploy/output.py`, pinned by `capture-protocol.json`. Older standalone
+captures remain readable without migration. An explicit `UDS_DEPLOY_RUNTIME_DIR`
+is isolated from other namespaces. Ownership, permissions, ancestry, executable
+identity and held log descriptors are validated; old task tees also require
+matching pipe identities. Viewers never read deployment TTYs or output pipes.
+
+## Evidence, privacy and limits
+
+- The server binds **127.0.0.1 only**, serves a private capability URL, and rejects
+  mutation APIs. It cannot deploy, retry, cancel, signal or schedule anything.
+- It reads same-user process metadata and bounded local `.tar.zst` metadata.
+  OCI-only deployments without a trustworthy local artifact are not supported.
+- Green **Done** may be inferred from complete, error-free sequential CLI
+  advancement. In particular, terminal Helm health checks followed by CLI
+  termination without reported errors can finish the final step/package/run
+  when declared component coverage is complete. Inference is disclosed.
+- Errors, retries, gaps, failed current-deployment checks, and ambiguous streams
+  block inference. Silence/disappearance alone is not success; a late viewer
+  cannot observe an authoritative native exit code.
+- Full **packaged** YAML/commands are visible. No resolved external config,
+  credential snapshot, decoded Helm values, or kubeconfig is saved. Optional
+  read-only Kubernetes metadata checks require explicit viewer `KUBECONFIG`;
+  the ambient default cluster context is not queried.
+- Capture directories are 0700 and logs/status files 0600. Keep the URL,
+  definitions and downloaded logs private: native output can contain secrets.
+  No external assets, telemetry or database are used. Windows is unsupported.
 
 ## Optional package install
 
-The clone launcher above needs no installation. If you already use pipx, you can
-install this checkout for an `uds-watch` command available from any directory:
+The clone launcher needs no installation. With an existing pipx installation:
 
 ```sh
 pipx install .
 uds-watch doctor
 ```
 
-This uses setuptools only to build/install the package; the running application
-uses Python's standard library.
+Setuptools is build-time only; the running Python code uses the standard library.
+All four bootstrap artifacts and local web/font/license assets are packaged.
 
-## One shared UI—no styling forks
+## Development and shared UI
 
 The approved `uds-deploy-ui` branch of sonic-swf-iac is the UI source of truth
-(`scripts/uds_deploy/web/`). Standalone `src/uds_deploy/web/` is a **verbatim vendor
-copy**, not a second design: HTML, JavaScript, CSS, fonts, logos, and the development
-reload script stay byte-for-byte identical. Only backend integration/packaging
-differs. The shared HTML defaults to the approved read-only watcher mode.
-
-A pinned `ui-assets.json` and `tests/test_ui_parity.py` reject local drift.
-Maintainers synchronize from the approved checkout:
+(`scripts/uds_deploy/web/`). Standalone `src/uds_deploy/web/` is a **verbatim
+vendor copy**, not a styling fork. All 16 assets are guarded by `ui-assets.json`:
 
 ```sh
 python3 scripts/sync-ui.py \
   --source /path/to/approved-checkout/scripts/uds_deploy/web \
   --manifest /path/to/approved-checkout/ui-assets.json \
-  --destination src/uds_deploy/web --destination-manifest ui-assets.json
-```
-
-Repeat the command with `--check` to verify parity. Do not independently edit the
-standalone copy or merely regenerate its manifest. Run parity checks in both
-repositories and Playwright on affected views. This is development-time syncing;
-standalone users do not need the original repository to install or run the tool.
-
-## Development
-
-```sh
+  --destination src/uds_deploy/web --destination-manifest ui-assets.json --check
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 node tests/test_step_colors.cjs
 node tests/test_log_search.cjs
 node tests/test_yaml_highlighting.cjs
 ```
 
-For real, action-only SDK coverage (no cluster or application rollout):
+Do not independently edit or regenerate the UI/protocol pins to conceal drift.
+Build native bootstraps only as a development operation with
+`scripts/build-cli-bootstrap.py`; Linux ABI builds use
+`tests/containers/Dockerfile.rhel8`. Build all four reviewed artifacts before
+explicit `--refresh-manifest`. Runtime setup never invokes this build script.
+
+Real, action-only SDK coverage (no application/cluster rollout):
 
 ```sh
 UDS_LIVE_INTEGRATION=1 UDS_TEST_BINARY=/path/to/uds \
   python3 -m unittest discover -s tests -p test_real_cli.py -v
-```
-
-To test the full deployment-first journey with real stock UDS and the real
-standalone viewer API:
-
-```sh
-UDS_USER_JOURNEY=1 UDS_TEST_BINARY=/path/to/uds \
+UDS_USER_JOURNEY=1 UDS_JOURNEY_CAPTURE_MODE=entrypoint \
+  UDS_JOURNEY_LAUNCH=run UDS_TEST_BINARY=/path/to/uds \
   PLAYWRIGHT_MODULE=/path/to/node_modules/playwright \
   python3 -m unittest discover -s tests -p test_user_journey.py -v
 ```
 
-This enables the hook in an isolated fake home, starts an action-only deployment
-**before** the watcher, then verifies live progress, completion, and byte-exact
-log downloads in both Bash and zsh. Browser handoff is recorded without opening
-an OS browser; the page is opened with normal Playwright launch and its default
-safety flags. It does not verify your OS's default-browser integration or touch
-its settings. No real cluster/application rollout is involved.
-
-To exercise SONIC task capture instead of the standalone shell hook, add
-`UDS_JOURNEY_CAPTURE_MODE=sonic-task` and
-`UDS_SONIC_TEST_HELPER=/path/to/sonic-checkout/scripts/deploy-output.py` to the
-journey command above. It runs an isolated action-only `uds run` task using that
-actual output helper, with the default shared capture namespace and no prior
-viewer or shell-hook setup. The viewer starts only after the native action is
-running. Its download is compared byte-for-byte against an independently held
-capture descriptor (the outer task console may add its own status messages).
-
-To visually check a genuinely empty viewer (with no running deployment):
-
-```sh
-PLAYWRIGHT_MODULE=/path/to/node_modules/playwright node tests/test_empty_viewer_browser.cjs
-```
-
-This starts the real read-only server, verifies both UDS logo variants, empty-state
-contrast and responsive layout, and cleans up its own viewer/browser afterward.
-
-For Playwright against an existing private local capture, set
-`UDS_WATCHER_SOURCE_URL`, `UDS_WATCHER_CAPTURE_ID`, and `PLAYWRIGHT_MODULE`, then
-run `node tests/test_real_capture_browser.cjs`. It starts and cleans up a temporary
-GET-only test server; no captured lifecycle state is injected or saved.
-
-Node/Playwright are development-only tools, not runtime requirements. Browser
-checks must use actual captured deployments; isolated edge-case fixtures must
-be identified as such. Do not redeploy real applications just to inspect styling.
+Journey launch modes: `direct`, `script`, `script-relative`, `script-absolute`,
+`run`, `run-absolute`. Each tests Bash/zsh, setup-before-deployment,
+deployment-before-viewer, live progress and byte-exact downloads. Browser handoff
+is recorded separately; normal Playwright launch does **not** certify the OS
+browser integration. `UDS_JOURNEY_API_ONLY=1` explicitly selects API-only checks,
+not browser evidence. `UDS_JOURNEY_CAPTURE_MODE=sonic-task` with
+`UDS_SONIC_TEST_HELPER=/path/to/scripts/deploy-output.py` tests existing SONIC tees.
+Never use an OS browser with a synthetic HOME or touch real Keychain settings.
 
 ## License
 
-Apache-2.0; see [LICENSE](LICENSE) and [NOTICE](NOTICE) for source attribution and
-standalone modifications. Bundled GitLab fonts retain their SIL OFL notices.
-The header uses the same unmodified light/dark UDS artwork as the integrated
-viewer. Product artwork and trademarks remain their owners' property; the
-project's code license does not grant trademark rights or imply endorsement.
+Apache-2.0; see [LICENSE](LICENSE) and [NOTICE](NOTICE). Bundled GitLab fonts retain
+their SIL OFL notices. The same unmodified light/dark UDS artwork is used by both
+viewers. Artwork and trademarks remain their owners' property; no endorsement
+or trademark rights are implied.

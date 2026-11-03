@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'src'))
-from uds_deploy import cli,setup
+from uds_deploy import cli,setup,entrypoints
 
 
 class Terminal(io.StringIO):
@@ -24,6 +24,8 @@ class SetupTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory(prefix='uds-watch-setup-');self.home=Path(self.temp.name)
         self.env=patch.dict(os.environ,{'HOME':str(self.home),'XDG_CONFIG_HOME':str(self.home/'.config'),'ZDOTDIR':str(self.home),'UDS_DEPLOY_RUNTIME_DIR':str(self.home/'runtime')})
         self.env.start()
+        self.discovery=patch.object(entrypoints,'selected',return_value=[]);self.discovery.start()
+        self.addCleanup(self.discovery.stop)
     def tearDown(self):self.env.stop();self.temp.cleanup()
     def test_private_backup_permissions_and_exact_uninstall(self):
         path=self.home/'.zshrc';original=b"export EXAMPLE='opaque-sensitive-canary'\n# no trailing newline";path.write_bytes(original);path.chmod(0o640)
@@ -82,8 +84,9 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(setup.preference(),'declined');self.assertFalse((self.home/'.zshrc').exists())
         with patch('sys.stdin',Terminal()),patch('sys.stdout',Terminal()),patch.object(cli,'current_shell',return_value='zsh'),patch('builtins.input',side_effect=AssertionError('must not prompt again')):cli.maybe_setup()
         setup.preference('installed')
-        with patch('sys.stdin',Terminal()),patch('sys.stdout',Terminal()),patch.object(cli,'current_shell',return_value='zsh'),patch('builtins.input',return_value='y'),patch.object(sys,'argv',[str(ROOT/'uds-watch')]):cli.maybe_setup()
-        self.assertTrue(setup.configured('zsh'))
+        fake=self.home/'uds'
+        with patch('sys.stdin',Terminal()),patch('sys.stdout',Terminal()),patch.object(entrypoints,'selected',return_value=[fake]),patch.object(entrypoints,'install_many',return_value=[{'entry':fake}]) as installed,patch('builtins.input',return_value='y'),patch.object(sys,'argv',[str(ROOT/'uds-watch')]):cli.maybe_setup()
+        installed.assert_called_once_with([fake]);self.assertFalse((self.home/'.zshrc').exists(),'CLI setup must not silently add shell hooks')
     def test_cli_noninteractive_requires_explicit_approval(self):
         result=subprocess.run([str(ROOT/'uds-watch'),'setup','--shell','zsh'],stdin=subprocess.DEVNULL,capture_output=True,timeout=10)
         self.assertNotEqual(result.returncode,0);self.assertFalse((self.home/'.zshrc').exists())

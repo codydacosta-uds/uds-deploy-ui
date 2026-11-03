@@ -1,4 +1,4 @@
-"""User-facing launcher and opt-in output-only shell integration."""
+"""Read-only viewer and explicitly approved, reversible capture setup."""
 import argparse
 import errno
 import os
@@ -83,19 +83,20 @@ def maybe_setup(disabled=False):
     try:
         if os.tcgetpgrp(sys.stdin.fileno())!=os.getpgrp():return  # Never suspend a background viewer for input.
     except (OSError,ValueError):pass  # Embedded terminal streams may not expose a file descriptor.
-    from . import setup
-    shell=current_shell()
-    if shell not in ('bash','zsh') or setup.configured(shell) or setup.preference()=='declined':return
-    print('\nEnable automatic output capture for future '+shell+' terminals?')
-    print('This adds a managed startup block, keeps private backups, and leaves native UDS/Zarf binaries and configs unchanged.')
-    for path in setup.targets(shell):print('  '+str(path))
+    from . import setup,entrypoints
+    if entrypoints.configured() or setup.preference()=='declined':return
+    print('\nEnable automatic capture at your UDS/Zarf CLI entrypoints?')
+    print('Setup places reversible launchers at the paths below and preserves each original executable unchanged beside it.')
+    print('This covers direct commands, scripts and uds run that invoke these configured executables; it does not edit shell startup or deployment configuration.')
+    paths=entrypoints.selected()
+    for path in paths:print('  '+str(path))
     try:
-        if confirm_setup('Enable capture? [y/N] '):
-            setup_result(setup.install(Path(sys.argv[0]).resolve(),shell))
+        if confirm_setup('Register these CLI paths? [y/N] '):
+            for item in entrypoints.install_many(paths):print('Registered: '+str(item['entry']))
             remember_setup('installed')
         else:remember_setup('declined');print('Skipped. You can enable it later with uds-watch setup.')
     except (OSError,ValueError,subprocess.SubprocessError) as error:
-        print('Automatic setup unavailable: '+str(error)+'. Use shell-init manually; the viewer will still open.',file=sys.stderr)
+        print('Automatic CLI registration unavailable: '+str(error)+'. No deployment was started; the viewer will still open.',file=sys.stderr)
 
 
 def doctor():
@@ -109,6 +110,12 @@ def doctor():
     cli=shutil.which('uds') or shutil.which('zarf')
     print('UDS/Zarf: '+('available' if cli else 'missing'))
     if not cli:missing.append('uds or zarf')
+    try:
+        from .entrypoints import bootstrap_binary
+        bootstrap_binary();print('CLI capture bootstrap: available (no runtime compiler/download)')
+    except (OSError,ValueError,subprocess.SubprocessError) as error:
+        print('CLI capture bootstrap: unavailable ('+str(error)+')')
+        # Existing task captures remain readable without executable registration.
     return 0 if supported and not missing else 1
 
 
@@ -133,17 +140,32 @@ def main(argv=None):
     hook.add_argument('--shell',choices=('bash','zsh'),default=None)
     hook.add_argument('--tool',choices=('uds','zarf'),default='uds')
     for action in ('setup','uninstall'):
-        command=commands.add_parser(action,help=('install' if action=='setup' else 'remove')+' the managed capture block in shell startup files')
+        command=commands.add_parser(action,help=('install' if action=='setup' else 'remove')+' reversible CLI capture registration (or an explicit legacy shell hook)' )
         command.add_argument('--shell',choices=('bash','zsh'))
         command.add_argument('--rc-file',type=Path,help='explicit startup file, for a nonstandard shell configuration')
-        command.add_argument('--yes',action='store_true',help='explicitly approve startup-file changes without a prompt')
+        command.add_argument('--yes',action='store_true',help='explicitly approve the displayed setup changes without a prompt')
+        command.add_argument('--cli',type=Path,action='append',help='register/restore this CLI executable; repeat for additional installations')
+        command.add_argument('--legacy-shell-hook',action='store_true',help='explicit legacy current-shell integration instead of executable registration')
         if action=='setup':command.add_argument('--tool',choices=('uds','zarf','both'),default='both')
     commands.add_parser('capture',help='copy stdin to the terminal and private temporary capture; never launches UDS')
     args=parser.parse_args(argv)
     if args.command=='doctor':return doctor()
     if args.command in ('setup','uninstall'):
-        from . import setup
+        from . import setup,entrypoints
         shell=args.shell or current_shell()
+        if args.cli or not (args.legacy_shell_hook or args.rc_file):
+            try:
+                paths=[path.expanduser().absolute() for path in args.cli] if args.cli else entrypoints.selected(args.tool) if args.command=='setup' else entrypoints.registered()
+                print('Reversible CLI '+args.command+':')
+                for path in paths:print('  '+str(path))
+                print('Native executable bytes are preserved. No deployment commands or configuration are changed.')
+                if not args.yes and not confirm_setup('Approve these CLI entrypoint changes? [y/N] '):print('No changes made.');return 0
+                if args.command=='setup':
+                    for item in entrypoints.install_many(paths):print('Registered: '+str(item['entry'])+'; preserved native: '+str(item['native']))
+                else:
+                    for path in entrypoints.uninstall_many(paths):print('Restored native: '+str(path))
+                remember_setup('installed' if args.command=='setup' else 'declined');return 0
+            except (OSError,ValueError,subprocess.SubprocessError) as error:parser.error(str(error))
         try:
             files=setup.targets(shell,args.rc_file,all_login=args.command=='uninstall')
             print('Managed capture '+args.command+' for '+shell+':')
