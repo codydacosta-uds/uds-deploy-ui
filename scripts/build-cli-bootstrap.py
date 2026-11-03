@@ -18,6 +18,7 @@ arch={'amd64':'x86_64','arm64':'arm64' if sys.platform=='darwin' else 'aarch64'}
 output=args.output or ROOT/'src/uds_deploy/bootstrap'/(sys.platform+'-'+arch)
 output.parent.mkdir(parents=True,exist_ok=True)
 flags=['-O2','-Wall','-Wextra','-Werror']
+if sys.platform=='linux':flags+=['-D_FORTIFY_SOURCE=2']
 if sys.platform=='darwin':flags+=['-arch',arch,'-mmacosx-version-min='+('11.0' if arch=='arm64' else '10.15')]
 subprocess.run(['cc']+flags+[str(ROOT/'src/uds_deploy/cli_bootstrap.c'),'-o',str(output)],check=True)
 print('Built '+output.name)

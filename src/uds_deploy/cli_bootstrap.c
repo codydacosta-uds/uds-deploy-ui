@@ -57,7 +57,13 @@ static void broken_capture(const char *record){
  size_t length=strlen(record);if(length<=13||strcmp(record+length-13,"/capture.json"))return;
  char path[8192];if(length+1>sizeof(path))return;memcpy(path,record,length-13);strcpy(path+length-13,"/integrity");
  int fd=open(path,O_WRONLY|O_NOFOLLOW);struct stat st;
- if(fd>=0){if(!fstat(fd,&st)&&S_ISREG(st.st_mode)&&st.st_uid==getuid()&&st.st_nlink==1)pwrite(fd,"!",1,0);close(fd);}
+ if(fd>=0){
+  if(!fstat(fd,&st)&&S_ISREG(st.st_mode)&&st.st_uid==getuid()&&st.st_nlink==1){
+   ssize_t marked;do{marked=pwrite(fd,"!",1,0);}while(marked<0&&errno==EINTR);
+   if(marked!=1)unlink(record); /* An unmarkable capture is never advertised. */
+  }
+  close(fd);
+ }
  if(!lstat(record,&st)&&S_ISREG(st.st_mode)&&st.st_uid==getuid())unlink(record);
 }
 /* Capture is a best-effort side channel. Only this native forwarding process
