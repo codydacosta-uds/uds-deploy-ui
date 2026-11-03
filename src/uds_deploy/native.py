@@ -515,7 +515,7 @@ class NativeReader:
         identifier=session['sequence']
         if kind=='log':
             session['line_sequence']+=1;identifier=session['line_sequence'];session['state']['log_cursor']=identifier
-        single=session['state']['packages'][0] if len(session['state']['packages'])==1 and kind=='log' else None
+        single=session['state']['packages'][0] if len(session['state']['packages'])==1 and kind=='log' and not session.get('skip_reports') else None
         session['events'].append(dict(id=identifier,event_cursor=session['sequence'],run=session['state']['id'],type=kind,timestamp=time.time(),data=data,package=single['id'] if single else None,attempt=single['attempts'][0]['id'] if single else None))
     def read(self,session,finished=False):
         output=session['file']
@@ -625,7 +625,7 @@ class NativeReader:
                     if not raw:break
                     index+=1
                     text=raw.decode('utf-8',errors='replace')
-                    single=session['state']['packages'][0] if len(session['state']['packages'])==1 else None
+                    single=session['state']['packages'][0] if len(session['state']['packages'])==1 and not session.get('skip_reports') else None
                     if package and (not single or package!=single['id']) or attempt and (not single or attempt!=single['attempts'][0]['id']):continue
                     if index<=after or before is not None and index>=before:continue
                     if filters.get('search') and filters['search'].lower() not in text.lower():continue

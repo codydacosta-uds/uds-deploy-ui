@@ -34,6 +34,7 @@ class NativeTests(unittest.TestCase):
         self.assertTrue(session['skip_reports']);self.assertEqual(session['state']['reports'],[])
         self.assertFalse(session['state']['source']['output_complete'])
         self.assertIn('ambiguous',session['state']['source']['note'])
+        self.assertTrue(all(row['package'] is None for row in self.reader.events(session['state']['id'],logs=True)))
         # A same-name short deployment missed between ps polls must also be
         # caught by its repeated package start, not silently treated as one CLI.
         session['skip_reports']=False;session['task_package_starts']={};session['file'].seek(0)
