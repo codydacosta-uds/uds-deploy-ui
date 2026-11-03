@@ -1,5 +1,4 @@
 // Pure rendering-policy unit checks. No data is inserted into the live preview.
-// Standalone adaptation of Apache-2.0 regression tests; see NOTICE.
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const source=fs.readFileSync(path.join(__dirname,'../src/uds_deploy/web/app.js'),'utf8');
 const start=source.indexOf('function reportedStepState('),end=source.indexOf('\n}',start)+2;
@@ -67,6 +66,24 @@ assert.equal(infer(ended,[...finalReports,{...error,timestamp:5.5}])[0].inferred
 assert.equal(infer({...ended,packages:[{...ended.packages[0],attempts:[{execution:{components:[{id:'app',phases:[]},{id:'not-executed',phases:[]}]}}]}]},finalReports)[0].inferred_package_complete,undefined,'Unobserved declared components cannot be treated as complete');
 assert.equal(infer(ended,[pkgA])[0].inferred_package_complete,undefined,'Process exit alone is never success');
 assert.equal(pkgA.inferred_package_complete,undefined,'Do not alter captured evidence');
+const finalHealth={...health,id:'final-health',timestamp:4,definition_owner:finalOwner};
+const healthReports=[pkgA,componentStart,{...upgrade,timestamp:3,definition_owner:finalOwner},finalHealth];
+const healthDone=infer(ended,healthReports);
+assert.equal(healthDone[3].inferred_complete,true,'Approved policy: full error-free CLI ends after Helm health checks');
+assert.equal(classify(healthDone.slice(2),null,[],false,false).state,'succeeded');
+assert.equal(healthDone[0].inferred_package_complete,true,'Final Helm package must show green Done');
+assert.match(healthDone[3].inference_evidence,/Assumed complete/);
+assert.equal(finalHealth.inferred_complete,undefined,'Keep captured reports immutable');
+assert.equal(infer({...ended,status:'deploying',completed_at:null},healthReports)[3].inferred_complete,undefined,'Health checks alone while CLI is running remain running');
+assert.equal(infer({...ended,source:{...ended.source,output_complete:false}},healthReports)[3].inferred_complete,undefined);
+assert.equal(infer({...ended,source:{...ended.source,activity_available:false}},healthReports)[3].inferred_complete,undefined);
+assert.equal(infer({...ended,mode:'concurrent'},healthReports)[3].inferred_complete,undefined);
+assert.equal(infer({...ended,mode:'parallel'},healthReports)[3].inferred_complete,undefined);
+assert.equal(infer(ended,[...healthReports,{...error,timestamp:5}])[3].inferred_complete,undefined);
+assert.equal(infer(ended,[...healthReports,{...after,label:'Failure action',timestamp:5}])[3].inferred_complete,undefined);
+assert.equal(infer(ended,[...healthReports,{...retry,definition_owner:finalOwner,timestamp:5}])[4].inferred_complete,undefined,'Retry preparation is not terminal health completion');
+assert.equal(infer({...ended,packages:[{...ended.packages[0],attempts:[{execution:{components:[{id:'app',phases:[]},{id:'unseen',phases:[]}]}}]}]},healthReports)[0].inferred_package_complete,undefined);
+assert.equal(infer(ended,[pkgA,componentStart,finalHealth])[2].inferred_complete,undefined,'Health without observed install/upgrade is insufficient');
 const packageStart=source.indexOf('function reportedPackageState('),packageEnd=source.indexOf('\n}',packageStart)+2,packageState=vm.runInNewContext('('+source.slice(packageStart,packageEnd)+')');
 assert.equal(packageState({status:'unknown'},[action('action succeeded')],false).state,'unknown','Successful steps alone do not certify a package');
 assert.equal(packageState({status:'unknown'},[action('action succeeded')],false).label,'Result not reported');
@@ -128,4 +145,14 @@ assert.equal(feedState({status:'failed',completed_at:10},true),'Output ended');
 assert.equal(feedState({status:'deploying',source:{activity_available:false,note:'Output capture stopped while CLI is still running; check the deployment terminal'}},true),'Capture stopped');
 assert.equal(feedState({status:'deploying',source:{output_complete:false}},true),null,'A partial capture can still be live');
 assert.equal(feedState({status:'completed',completed_at:10},false),null,'Keep legacy viewer follow behavior unchanged');
-console.log('Step/feed policy passed: guarded completion, accurate output-ended/capture-stopped labels, no success from silence or unrelated streams.');
+const runStart=source.indexOf('function inferredRunCompletion('),runEnd=source.indexOf('\n}',runStart)+2,runDone=vm.runInNewContext('('+source.slice(runStart,runEnd)+')',{inferSequentialCompletion:infer,scopeImageReports:scope,reportedPackageState:packageState});
+assert.equal(runDone({...ended,reports:healthReports}),true,'The ended, fully observed health-complete run shows green Done');
+assert.equal(runDone({...ended,reports:finalReports}),true);
+assert.equal(runDone({...ended,reports:healthReports,status:'deploying',completed_at:null}),false);
+assert.equal(runDone({...ended,reports:healthReports,source:{...ended.source,output_complete:false}}),false);
+assert.equal(runDone({...ended,reports:healthReports,mode:'parallel'}),false);
+assert.equal(runDone({...ended,reports:[...healthReports,error]}),false);
+assert.equal(runDone({...ended,reports:healthReports,checks:[{current_deployment:true,status:'failed'}]}),false);
+assert.equal(infer({...ended,checks:[{current_deployment:true,status:'failed'}]},healthReports)[3].inferred_complete,undefined);
+assert.equal(runDone({...ended,reports:[pkgA]}),false,'Process exit without health/work evidence remains unknown');
+console.log('Step/feed policy passed: approved terminal-health Done, guarded inference, accurate output labels, no success from silence alone.');

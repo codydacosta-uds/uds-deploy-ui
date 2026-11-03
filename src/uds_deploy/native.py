@@ -61,7 +61,7 @@ def processes():
 def open_files(pid):
     # lsof is read-only and available on macOS/Linux. Never open a TTY: doing so
     # would not recover historical writes and could interfere with user input.
-    result=subprocess.run(['lsof','-a','-p',str(pid),'-Fftni'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=3)
+    result=subprocess.run(['lsof','-a','-p',str(pid),'-Fftnid'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=3)
     records=[];entry={}
     for line in result.stdout.decode('utf-8',errors='replace').splitlines():
         if line.startswith('f'):
@@ -70,6 +70,7 @@ def open_files(pid):
         elif line.startswith('t'):entry['type']=line[1:]
         elif line.startswith('n'):entry['path']=line[1:]
         elif line.startswith('i'):entry['inode']=line[1:]
+        elif line.startswith('d'):entry['device']=line[1:]
     if entry:records.append(entry)
     return records
 
