@@ -7,13 +7,6 @@ ab9ba3e9f3c25c1a7a8904a9b645b3e6cc965439 with subsequent interface refinements.
 These files have been adapted for standalone use. Deployment scheduling,
 retry execution, infrastructure configuration, and private captures are omitted.
 
-CLI forwarding bootstraps and their Python output-copy helper are original
-Apache-2.0 project code. Distributed Darwin ARM64/x86_64 and Linux AArch64/x86_64
-bootstrap executables are built from src/uds_deploy/cli_bootstrap.c; source and
-artifact hashes are pinned in src/uds_deploy/bootstrap/manifest.json. No UDS or
-Zarf native CLI executables are included. Linux bootstraps dynamically link the
-host's C library (glibc 2.28 or newer); a C library is not bundled.
-
 GitLab Sans and GitLab Mono are redistributed under SIL OFL 1.1. Their
 unmodified font files, copyright/license notices, and source provenance are in
 src/uds_deploy/web/fonts/.

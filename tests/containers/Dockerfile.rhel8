@@ -1,6 +1,0 @@
-# Development-only ABI/conformance environment. Never installed on a bastion.
-FROM rockylinux:8
-RUN dnf -y install gcc python3.11 lsof procps-ng zstd zsh which findutils && dnf clean all
-RUN mkdir -p /opt/watcher-test-bin && ln -s /usr/bin/python3.11 /opt/watcher-test-bin/python3
-ENV PATH="/opt/watcher-test-bin:${PATH}"
-WORKDIR /work

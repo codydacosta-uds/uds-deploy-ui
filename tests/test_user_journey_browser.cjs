@@ -23,14 +23,14 @@ async function until(test,message,timeout=25000){const deadline=Date.now()+timeo
   await card.locator('.component-execution:visible .stock-job').first().click();await page.waitForFunction(()=>!logLoading&&document.querySelector('#logs .log-anchor'));assert.match(await page.locator('#log-subtitle').innerText(),/Jumped to/);await page.getByRole('button',{name:'Close logs',exact:true}).click();
   fs.writeFileSync(manifest.release_prepare,'release');
   await page.waitForFunction(()=>state.reports.some(r=>r.definition_owner?.component==='verify'&&r.message==='running command'));
-  await card.getByRole('button',{name:'Inspect watcher-journey / verify',exact:true}).click();assert.ok(await card.locator('.component-execution:visible .stock-job.running').count()>0);
+  await card.getByRole('button',{name:'Inspect '+manifest.package_alias+' / verify',exact:true}).click();assert.ok(await card.locator('.component-execution:visible .stock-job.running').count()>0);
   await page.getByRole('button',{name:'Dark mode',exact:true}).click();await page.screenshot({path:path.join(manifest.evidence,manifest.shell+'-02-live-transition-dark.png'),fullPage:true});
   fs.writeFileSync(manifest.release_verify,'release');await until(()=>fs.existsSync(manifest.task_exit),'Native deployment did not finish');
   assert.equal(JSON.parse(fs.readFileSync(manifest.task_exit,'utf8')).code,0,'Real native CLI must complete successfully');
   await page.waitForFunction(()=>!!state.completed_at);await page.waitForFunction(()=>document.querySelector('#run-status').textContent==='Done');
   assert.equal(await page.locator('.current-cli-activity').count(),0,'Ended CLI is no longer presented as running');
   assert.equal(await page.locator('[data-status-package]').first().getAttribute('data-package-status'),'succeeded','Positive final action and CLI advancement permit the documented green inferred result');
-  await card.getByRole('button',{name:'Inspect watcher-journey / prepare',exact:true}).click();assert.equal(await card.locator('.component-execution:visible .stock-job').first().getAttribute('data-step-status'),'succeeded');
+  await card.getByRole('button',{name:'Inspect '+manifest.package_alias+' / prepare',exact:true}).click();assert.equal(await card.locator('.component-execution:visible .stock-job').first().getAttribute('data-step-status'),'succeeded');
   const response=await page.request.get(new URL('api/deployments/'+encodeURIComponent(source.run)+'/logs?download=1',event.url).href);assert.equal(response.status(),200);
   assert.ok((await response.body()).equals(fs.readFileSync(manifest.terminal)),'End-to-end download must exactly match the original native CLI output');
   assert.ok((await response.body()).includes(Buffer.from('JOURNEY stdout')));assert.ok((await response.body()).includes(Buffer.from('JOURNEY stderr')));
