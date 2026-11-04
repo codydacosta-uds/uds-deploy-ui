@@ -90,6 +90,9 @@ body[data-mode=live] .selection-explanation { border: 0; background: transparent
 #not-selected-title { display: inline-flex; align-items: center; gap: 8px; }
 .not-selected-explanation { padding: 16px 18px; }
 .not-selected-explanation p:last-child { margin-bottom: 0; }
+body[data-mode=live] .step-status-icon.pending { border-color: #9a6700; background: #fdf1d9; color: #9a6700; }
+body[data-mode=live] .step-status-icon.pending::before { content: ''; box-sizing: border-box; width: 6px; height: 7px; border-left: 2px solid currentColor; border-right: 2px solid currentColor; }
+html[data-theme=dark] body[data-mode=live] .step-status-icon.pending { border-color: #f1a32b; background: transparent; color: #f1a32b; }
 .step-status-icon.not-selected { border-color: #9a6700; background: #9a6700; color: #fff; }
 html[data-theme=dark] .step-status-icon.not-selected { border-color: #e9b949; background: #e9b949; color: #292000; }
 .component-step-connector { margin-right: 4px; color: #626b76; font: 15px/1 var(--font-ui); }

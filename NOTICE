@@ -1,8 +1,8 @@
 UDS Deploy UI / UDS Watch
 
 Portions of the read-only reader, output capture, artifact views, web interface,
-and regression tests derive from the Apache-2.0-licensed deployment watcher in
-sonic-swf-iac (scripts/uds_deploy and associated tests), based on revision
+and regression tests derive from the original Apache-2.0-licensed UDS deployment
+watcher (scripts/uds_deploy and associated tests), based on revision
 ab9ba3e9f3c25c1a7a8904a9b645b3e6cc965439 with subsequent interface refinements.
 These files have been adapted for standalone use. Deployment scheduling,
 retry execution, infrastructure configuration, and private captures are omitted.

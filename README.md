@@ -61,8 +61,8 @@ Start the viewer before deployment or while it is still running. It never reads
 terminal history or attaches to a deployment's TTY.
 
 `./uds`, absolute executable paths, `command uds`, `uds run`, and commands inside
-scripts bypass this shell capture. Those workflows, including SONIC tasks, need
-an explicit capture tee configured separately. The existing pattern remains:
+scripts bypass this shell capture. Those workflows need an explicit capture tee
+configured separately. The existing pattern remains:
 
 ```bash
 ./uds deploy ... 2>&1 | ("$HOME/.local/bin/uds-watch" capture || cat)
@@ -126,9 +126,12 @@ node tests/test_log_search.cjs
 node tests/test_yaml_highlighting.cjs
 ```
 
-The UI is a verbatim copy of the approved SONIC `uds-deploy-ui` branch, guarded
-by `ui-assets.json`. Do not independently restyle it. Capture producers/readers
-share `uds_deploy/output.py`, pinned by `capture-protocol.json`.
+Shared UI assets are guarded by `ui-assets.json`. Use `scripts/sync-ui.py` to
+synchronize reviewed changes across viewer distributions rather than restyling
+vendor copies independently. Capture producers/readers share `uds_deploy/output.py`,
+pinned by `capture-protocol.json`. Captures use the generic
+`uds-watch-output-<uid>` temporary directory, or the isolated
+`UDS_DEPLOY_RUNTIME_DIR/output` override. Other capture namespaces are not read.
 
 Isolated action-only SDK tests use `UDS_LIVE_INTEGRATION=1` or
 `UDS_USER_JOURNEY=1` with `UDS_TEST_BINARY=/path/to/uds`. Browser journeys also
