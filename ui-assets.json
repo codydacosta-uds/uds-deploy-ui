@@ -2,7 +2,7 @@
   "schema_version": 1,
   "description": "Shared deployment viewer UI: identical HTML, JavaScript, CSS, fonts and artwork in every consumer.",
   "files": {
-    "app.js": "44f4535f8019f786021e416f3ae836068ff13bbf3bd9c08e5e2455e0fba03e7c",
+    "app.js": "ed7a8bed1d078c9668b2c7897032dedab961d4e07b842f83f0c01c02050767f2",
     "dev-reload.js": "80b29356e533a33e8f8ca247de99ed2adf594db40f0114219a959c5080cd51fe",
     "fonts/.gitattributes": "c1859ddc3c9e9a98a52b125c0e84b072eace66e5f8139615688cf64193301e49",
     "fonts/GitLabMono-Italic.woff2": "af36701a2188df32a9dcea12e0424c380019698d4f76da9ad8ea2fd59432cf83",
@@ -12,9 +12,9 @@
     "fonts/GitLabSans-LICENSE.txt": "45afc67c3192c2fbb9695bf912dc684b123e5013e1fde1451a8d0aa1667125ef",
     "fonts/GitLabSans.woff2": "9892dc17af892e03de41625c0ee325117a3b8ee4ba6005f3a3eac68510030aed",
     "fonts/NOTICE.txt": "6f5bad894210ba721b497b4dd7617bf881d493623a7d26d6d15afb1e2f894097",
-    "index.html": "5eb41f6be05bae9544d038ed05164af577e52f3999aa34af6008151a49cf669e",
-    "style.css": "13979a92bc9abf8de8fa63fa31f0099c7889937d8ef4c8d2e868fe5d2669a1e0",
-    "theme.css": "73ee926b7b63eb195ac76b7289097b14f4714b6b5881294969b5d0ce9161b4f8",
+    "index.html": "e315a41f519ae3e4b7842737c07e679bf6af8b4f01401a8694919aff7550f397",
+    "style.css": "84243291f1441cd94e2b6626fb2ed21741637d7c508304e2a28ba76ae0b0ec65",
+    "theme.css": "d141ac68e59cbfaaa3bd509c14e28bf54c96598e724fdaac963aa7532cfec920",
     "theme.js": "e81d3238d2fe4513c3d3567aa39cf36bd452416767ed182291ff07c50b385e4c",
     "uds-logo-on-dark.png": "1647899c1cab50f9748ba681efe6e06b361579a26d44107c8c37baa6ab4541b0",
     "uds-logo.png": "60f06c876b1752ff8036b2dad7d251ef147e122f9e377c877546ca6b3a676a8e"

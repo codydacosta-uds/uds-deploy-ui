@@ -341,6 +341,19 @@ def record_report(state,item,owners=None):
     lookup='helm' if kind.startswith('helm.') or kind=='health.wait' else 'images' if kind.startswith('images.') else 'actions' if kind=='actions.command' else kind
     matches=(owners or {}).get((lookup,item.get('action_id') or resource),[])
     if len(matches)==1 and (not item.get('reported_component') or matches[0].get('component')==item['reported_component']):item['definition_owner']=dict(matches[0])
+    if not item.get('definition_owner') and (lookup=='helm' or lookup=='images' and resource) and len(matches)>1:
+        # Stock UDS/Zarf deploys components sequentially. Reused chart/image
+        # names need the explicit component boundary, not a global name guess.
+        # Aggregate image completion still requires observed pushes below.
+        source=state.get('source',{})
+        sequential=source.get('kind')=='stock-process' and source.get('output_complete') is True and source.get('activity_available') is not False and source.get('single_cli') is not False and state.get('mode') not in ('parallel','concurrent') and sum(p.get('status')=='deploying' for p in state.get('packages',[]))<=1
+        starts=[r for r in reports if r['kind'] in ('package.start','component.start')]
+        boundary=max(starts,key=lambda r:r['timestamp']) if starts else None
+        scope=boundary.get('definition_owner') if boundary and boundary['kind']=='component.start' else None
+        if sequential and scope in matches and (not item.get('reported_component') or item['reported_component']==scope.get('component')):
+            item['definition_owner']=dict(scope)
+            item['scope_evidence']='explicit-sequential-cli-component-start'
+            if boundary.get('log_id') is not None:item['scope_log_id']=boundary['log_id']
     if not item.get('definition_owner') and kind=='images.push' and item['message']=='done pushing images':
         # The stock SDK completion is component-wide and has no image name.
         # Scope it only with an explicit, uniquely owned component-start report
@@ -364,10 +377,37 @@ def record_report(state,item,owners=None):
     else:
         if len(reports)>=2048:reports.pop(0)
         reports.append(item)
+    if owner.get('component'):
+        for package in state.get('packages',[]):
+            if package.get('id')!=owner.get('package'):continue
+            for attempt in package.get('attempts',[]):
+                for component in (attempt.get('execution') or {}).get('components',[]):
+                    if component['id']==owner.get('component') and component.get('selection')=='not-selected':
+                        component.update(expected=True,selection='observed',selection_evidence='CLI reported activity for this component')
     if owner:
         seen=state.setdefault('reported_definitions',[])
         if owner not in seen:seen.append(owner)
     return item
+
+
+def unselected_components(bundle,item,package):
+    """Known optional omissions from packaged UDS selection, not runtime success.
+
+    UDS v0.40 uses Zarf's non-interactive filter: required/default components
+    plus optionalComponents. Unknown schemas/selectors/groups remain expected.
+    Actual CLI activity overrides this definition-only projection.
+    """
+    if bundle.get('kind')!='UDSBundle':return set()
+    requested=item.get('optionalComponents',[])
+    if not isinstance(requested,list) or any(not isinstance(name,str) or not re.fullmatch(r'[a-z0-9][a-z0-9._-]*',name) for name in requested):return set()
+    version=package.get('apiVersion')
+    if version not in (None,'zarf.dev/v1alpha1','zarf.dev/v1beta1'):return set()
+    beta=version=='zarf.dev/v1beta1'
+    excluded=set()
+    for component in package.get('components',[]):
+        optional=component.get('optional') is True if beta else component.get('required') is not True
+        if optional and component.get('default') is not True and not component.get('group') and component['name'] not in requested:excluded.add(component['name'])
+    return excluded
 
 
 class NativeReader:
@@ -448,9 +488,13 @@ class NativeReader:
         for item in definition.get('packages',[]):
             if wanted is not None and item['name'] not in wanted:continue
             package=packages.get(item['name'],{})
-            components=[dict(id=c['name'],expected=True,observed=False,status='pending',started_at=None,completed_at=None,error=None,phases=definition_operations(c,package.get('metadata',{}).get('name')),artifact_info=component_info(c,package.get('metadata',{}).get('name'))) for c in package.get('components',[])]
+            excluded=unselected_components(definition,item,package);components=[]
+            for c in package.get('components',[]):
+                component=dict(id=c['name'],expected=True,observed=False,status='pending',started_at=None,completed_at=None,error=None,phases=definition_operations(c,package.get('metadata',{}).get('name')),artifact_info=component_info(c,package.get('metadata',{}).get('name')))
+                if c['name'] in excluded:component.update(expected=False,selection='not-selected',selection_evidence='Optional component not selected by the packaged bundle')
+                components.append(component)
             plan.append(dict(id=item['name'],name=item['name'],artifact_info=artifact_info(package,item.get('ref')),version=item.get('ref','unknown').split('@')[0],dependencies=[],layer=0,status='unknown',started_at=None,completed_at=None,error=None,operation='Definition; execution is CLI-reported',attempts=[dict(id=item['name']+'-native',number=1,status='unknown',started_at=None,completed_at=None,error=None,execution=dict(schema_version=1,observation='definition-only',components=components))],retry_supported=False,retry_reason='Use the deployment terminal'))
-        state=dict(id=run,artifact_info=artifact_info(definition),bundle_name=definition.get('metadata',{}).get('name',bundle.name),version=str(definition.get('metadata',{}).get('version','unknown')),status='deploying',created_at=started if started is not None else time.time(),started_at=started,completed_at=None,heartbeat=None,target='Local CLI process '+str(process['pid']),environment='local',mode='observed',packages=plan,layers={},invocations=[],cursor=0,reports=[],checks=[],source=dict(kind='stock-process',pid=process['pid'],output_complete=complete,note=description))
+        state=dict(id=run,artifact_info=artifact_info(definition),bundle_name=definition.get('metadata',{}).get('name',bundle.name),version=str(definition.get('metadata',{}).get('version','unknown')),status='deploying',created_at=started if started is not None else time.time(),started_at=started,completed_at=None,heartbeat=None,target='Local CLI process '+str(process['pid']),environment='local',mode='observed',packages=plan,layers={},invocations=[],cursor=0,reports=[],checks=[],source=dict(kind='stock-process',pid=process['pid'],output_complete=complete,single_cli=not description.startswith('Task console output file;'),note=description))
         packages={key:value for key,value in packages.items() if any(p['id']==key for p in plan)}
         documents={'package:'+key:deepcopy(value) for key,value in packages.items() if artifact_info(value)['has_yaml']}
         if definition.get('kind')=='UDSBundle':documents['bundle']=deepcopy(definition)

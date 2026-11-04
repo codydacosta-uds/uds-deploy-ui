@@ -58,25 +58,23 @@ body[data-mode=live] .package-yaml { padding: 2px 8px; border: 1px solid #c9ced6
 body[data-mode=live] .package-yaml:hover { background: #e9edf2; }
 html[data-theme=dark] body[data-mode=live] .package-yaml { background: var(--theme-inset); border-color: var(--theme-border); color: var(--theme-link); }
 html[data-theme=dark] body[data-mode=live] .package-yaml:hover { background: var(--theme-hover); }
+body[data-mode=live] .component-progress-list { padding: 4px; }
 body[data-mode=live] .component-progress-row { min-height: 34px; padding: 6px 10px; }
+body[data-mode=live] .component-progress-row:focus-visible { outline-offset: -2px; }
+body[data-mode=live] .component-progress-empty, body[data-mode=live] .unobserved-component { display: inline-flex; align-items: center; gap: 6px; }
+body[data-mode=live] .component-progress-empty .step-status-icon { flex-basis: 16px; width: 16px; height: 16px; font-size: 10px; }
+body[data-mode=live] .selection-explanation { border: 0; background: transparent; text-align: left; outline-offset: -2px; }
+#not-selected-dialog { width: min(440px,calc(100vw - 40px)); }
+#not-selected-title { display: inline-flex; align-items: center; gap: 8px; }
+.not-selected-explanation { padding: 16px 18px; }
+.not-selected-explanation p:last-child { margin-bottom: 0; }
+.step-status-icon.not-selected { border-color: #9a6700; background: #9a6700; color: #fff; }
+html[data-theme=dark] .step-status-icon.not-selected { border-color: #e9b949; background: #e9b949; color: #292000; }
 .component-step-connector { margin-right: 4px; color: #626b76; font: 15px/1 var(--font-ui); }
-body[data-mode=live] .component-progress-row[data-compact=true] .component-progress-name { flex: 0 1 auto; }
-body[data-mode=live] .component-progress-row[data-compact=true] .component-counts { flex: 0 1 auto; gap: 4px 8px; }
 .component-progress-current { margin-left: auto; }
-.component-counts { color: #626b76; font-size: 10px; }
-.component-counts > span { white-space: nowrap; }
-.component-counts > span + span::before { content: '·'; margin-right: 6px; color: #626b76; }
-.component-step-count.succeeded { color: #166534; }
-.component-step-count.running { color: #1f5fa9; }
-.component-step-count.failed { color: #a32617; }
-html[data-theme=dark] .component-counts,
-html[data-theme=dark] .component-counts > span + span::before { color: var(--theme-muted); }
-html[data-theme=dark] .component-step-count.succeeded { color: var(--green); }
-html[data-theme=dark] .component-step-count.running { color: var(--theme-link); }
-html[data-theme=dark] .component-step-count.failed { color: var(--red); }
 body[data-mode=live] .component-progress-jobs { gap: 7px 10px; }
 html[data-theme=dark] .component-step-connector { color: var(--theme-muted); }
-body[data-mode=live] .component-progress-row[aria-pressed=true] { border-radius: 6px; background: #f3f4f6; box-shadow: inset 0 0 0 1px #8b96a4; }
+body[data-mode=live] .component-progress-row[aria-pressed=true] { border-radius: 6px; background: #f3f4f6; box-shadow: inset 0 0 0 1px var(--theme-border,#8b96a4); }
 html[data-theme=dark] body[data-mode=live] .component-progress-row[aria-pressed=true] { background: var(--theme-inset); }
 body[data-mode=live] .component-activity.has-resources { gap: 8px 16px; }
 body[data-mode=live] .component-activity.has-resources.no-observed-steps { display: block; }
@@ -135,7 +133,7 @@ body[data-mode=live] .deployment-package.succeeded { border-color: #108548; }
 .deployment-package.succeeded .package-result-label { color: #108548; }
 .deployment-package-track[data-layout=list] { display: grid; grid-template-columns: minmax(0,1fr); max-height: 320px; overflow-y: auto; gap: 6px; }
 body[data-mode=live] .deployment-package-track[data-layout=list] .deployment-package { width: 100%; padding-block: 8px; }
-body[data-mode=live] .deployment-package.is-selected { box-shadow: inset 0 0 0 1px #8b96a4; }
+body[data-mode=live] .deployment-package.is-selected { box-shadow: inset 0 0 0 1px var(--theme-border,#8b96a4); }
 .packages-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 0 8px; }
 .packages-toolbar .packages-heading { padding: 0; font-size: 16px; color: #243746; }
 .package-disclosure-controls { display: flex; gap: 8px; }
@@ -267,7 +265,7 @@ html[data-theme=dark] body[data-mode=live] .deployment-status-bar,
 html[data-theme=dark] body[data-mode=live] .package-execution,
 html[data-theme=dark] body[data-mode=live] .activity-panel,
 html[data-theme=dark] body[data-mode=live] .observation-gap,
-html[data-theme=dark] body[data-mode=live] #definition-dialog {
+html[data-theme=dark] body[data-mode=live] :is(#definition-dialog,#not-selected-dialog) {
   background: var(--theme-panel); color: var(--theme-text); border-color: var(--theme-border);
 }
 html[data-theme=dark] body[data-mode=live] .summary { border-top-color: var(--status-running); }
@@ -423,6 +421,7 @@ html[data-theme=dark] body[data-mode=live] .component-choice.has-error { color: 
 html[data-theme=dark] body[data-mode=live] .deployment-package.failed,
 html[data-theme=dark] body[data-mode=live] .execution-rail .stock-job.failed { border-color: var(--status-failed); }
 html[data-theme=dark] body[data-mode=live] .package-execution.is-active { border-left-color: var(--status-running); }
+html[data-theme=dark] body[data-mode=live] .package-execution.has-command-result { border-left-color: var(--status-success); }
 html[data-theme=dark] body[data-mode=live] .package-execution.has-reported-error { border-left-color: var(--status-failed); }
 html[data-theme=dark] body[data-mode=live] .cli-error-summary { background: #302426; border-color: #77504b; border-left-color: var(--status-failed); color: var(--theme-text); }
 html[data-theme=dark] body[data-mode=live] .cli-error-summary strong { color: var(--red); }
@@ -433,7 +432,7 @@ html[data-theme=dark] body[data-mode=live] .error-line { color: var(--red); }
 html[data-theme=dark] body[data-mode=live] .warning-line { color: #e9cc83; }
 html[data-theme=dark] body[data-mode=live] .definition-heading button,
 html[data-theme=dark] body[data-mode=live] #close-output { color: var(--theme-muted); background: transparent; }
-html[data-theme=dark] body[data-mode=live] #definition-dialog::backdrop { background: rgb(0 0 0 / 65%); }
+html[data-theme=dark] body[data-mode=live] :is(#definition-dialog,#not-selected-dialog)::backdrop { background: rgb(0 0 0 / 65%); }
 html[data-theme=dark] body[data-mode=live] .empty,
 html[data-theme=dark] body[data-mode=live] .page-description { color: var(--theme-muted); }
 html[data-theme=dark] body[data-mode=live] .empty code { background: var(--theme-inset); border-color: var(--theme-border); color: var(--theme-text); }

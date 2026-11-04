@@ -1,6 +1,7 @@
 # Development rules
 
-- Keep this a small, read-only viewer. No CLI replacement/registration, shell-startup edits, automatic setup, native bootstrap binaries, services, database, telemetry, deployment launching, retries, cancellation, scheduling or mutation APIs.
+- Keep this a small, read-only viewer. No CLI replacement/registration, native bootstrap binaries, services, database, telemetry, deployment launching, retries, cancellation, scheduling or mutation APIs.
+- Only the explicit `install.sh`/`uninstall.sh` may manage the `~/.local/bin/uds-watch` symlink, a marked Bash/Zsh `uds watch` shortcut, and marked capture tees in an explicitly selected deployment task file. Never install automatically on viewer startup, replace UDS, intercept other commands, or rewrite unrelated task logic. Keep these scripts minimal and idempotent.
 - Capture belongs to explicitly wired deployment tasks. The tee copies stdin and preserves original bytes; the task owns the native CLI and its exit status. The viewer reads only same-user process metadata, packaged artifacts and validated private capture files. Never read a deployment's TTY, history or output pipe.
 - Python runtime stays stdlib-only; the frontend stays build-free with local assets. Never save resolved external credentials/config, decoded Helm values or kubeconfig. Full packaged YAML remains visible.
 - Preserve the approved terminal-health inference: complete sequential capture, reported Helm health checks, then CLI termination without reported errors can show Done. All declared components/all observed work must be covered for package/run Done. Explain inference. Errors, retries, gaps, failed current-deployment checks, concurrent/ambiguous streams or silence/disappearance alone must not pass.

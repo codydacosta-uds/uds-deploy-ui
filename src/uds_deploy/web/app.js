@@ -14,6 +14,7 @@ let logHighlightCount=0, logHighlightsLimited=false;
 let logAnchorId=null, logAnchorLabel='';
 const activityLogPositions=new Map();
 let componentFilter=null, phaseFilter=null, operationFilter=null, activeRunId=null, discoveredRuns=[];
+let discovering=false, autoFollowRuns=true;
 const disclosure=new Map(), flowScroll=new Map(), componentChoices=new Map(), stepChoices=new Map();
 const manualPackages=new Set(), finishedViews=new Set();
 let quietFinished=false;try{quietFinished=localStorage.getItem('uds-deploy-quiet-finished')==='true';}catch{}
@@ -26,7 +27,7 @@ function elapsed(start,end){if(!start)return '—';const s=Math.max(0,Math.floor
 function shortDuration(start,end){if(!start)return '—';const s=Math.max(0,Math.floor((end||Date.now()/1000)-start));return s>=3600?`${Math.floor(s/3600)}h ${Math.floor(s/60)%60}m`:s>=60?`${Math.floor(s/60)}m ${s%60}s`:`${s}s`;}
 function node(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
 function setDisclosure(key,open){const detail=[...document.querySelectorAll('details[data-disclosure]')].find(e=>e.dataset.disclosure===key);if(detail)detail.open=open;disclosure.set(key,open);}
-function stepIcon(status){const e=node('span',status==='succeeded'?'✓':status==='failed'?'×':'','step-status-icon '+status);e.setAttribute('aria-hidden','true');return e;}
+function stepIcon(status){const e=node('span',status==='succeeded'?'✓':status==='failed'?'×':status==='not-selected'?'!':'','step-status-icon '+status);e.setAttribute('aria-hidden','true');return e;}
 function statusIcon(status){const e=node('span',['completed','succeeded'].includes(status)?'✓':['failed','cancelled','canceled'].includes(status)?'×':status==='unknown'?'?':status==='skipped'?'−':'',`status-icon ${status}`);e.setAttribute('aria-hidden','true');return e;}
 async function request(url,options){const r=await fetch(url,options);if(!r.ok){const data=await r.json();throw Error(data.error||r.statusText);}return r.json();}
 function notice(message){$('notice').hidden=!message;$('notice').textContent=message||'';}
@@ -97,7 +98,15 @@ function renderHistory(){
   }
   for(const el of document.querySelectorAll('[data-duration-run]')){const item=discoveredRuns.find(r=>r.id===el.dataset.durationRun);el.textContent=item.started_at&&(item.completed_at||item.status==='deploying')?shortDuration(item.started_at,item.completed_at):'—';}
 }
-async function discover(){try{
+function isActiveRun(item){return ['waiting','deploying'].includes(item?.status);}
+function nextActiveRun(runs,current){
+  const active=runs.filter(isActiveRun),previous=runs.find(r=>r.id===current);
+  return active.length===1&&active[0].id!==current&&!isActiveRun(previous)&&(!previous||active[0].created_at>previous.created_at)?active[0].id:null;
+}
+async function discover(){
+  if(discovering)return;
+  discovering=true;
+  try{
   const runs=await request(api);discoveredRuns=runs;const previous=$('history').value;
   renderHistory();
   if(liveOnly){
@@ -110,11 +119,14 @@ async function discover(){try{
   const key=runs.map(r=>`${r.id}:${r.status}`).join('|');
   if($('history').dataset.optionsKey!==key){$('history').replaceChildren();for(const item of runs){const o=node('option',`${item.environment} / ${item.bundle_name} · ${item.status} · ${new Date(item.created_at*1000).toLocaleString()}`);o.value=item.id;$('history').append(o);}$('history').dataset.optionsKey=key;}
   const active=runs.find(r=>['waiting','deploying'].includes(r.status));updateActiveLink();$('history').value=run||previous||(active||runs[0]).id;
+  const next=liveOnly&&autoFollowRuns&&pageView==='pipeline'&&state?nextActiveRun(runs,run):null;
   if(initialRoute){initialRoute=false;let id=new URL(location.href).searchParams.get('deployment');if(liveOnly&&id&&!runs.some(r=>r.id===id)){id=(active||runs[0]).id;window.history.replaceState(null,'',deploymentURL(id));}if(id)await chooseRun(id,false);else showPage('history');}
-  else if(liveOnly&&active&&state&&active.id!==run&&!runs.some(r=>r.id===run))await chooseRun(active.id,false);
+  else if(next)await chooseRun(next,false);
   else if(state&&(liveOnly||runs.some(item=>item.id===run&&item.status!==state.status)))await refreshState();
-}catch(e){notice(e.message);}}
+}catch(e){notice(e.message);}finally{discovering=false;}}
 async function chooseRun(id,navigate=true){
+  // Picking a historical run pins it; choosing an active run resumes following.
+  if(navigate)autoFollowRuns=isActiveRun(discoveredRuns.find(r=>r.id===id));
   generation++;const mine=generation;if(stream)stream.close();if(refreshTimer){clearTimeout(refreshTimer);refreshTimer=null;}
   run=id;state=null;selected=attempt=null;pipelineSelection=null;autoAttempt=true;full=true;rawMode=liveOnly;inspectorOpen=false;clearScope();$('history').value=id;
   $('connection').textContent='Loading deployment…';$('connection').className='';
@@ -156,11 +168,15 @@ function displayedGroups(){
   return [{id:0,label:state.bundle_name,packages:state.packages.map(p=>p.id)}];
 }
 function stageNames(groups){return groups.map(g=>grouping==='stages'||liveOnly?g.label:'Task scheduling');}
+function showNotSelected(){const dialog=$('not-selected-dialog');if(!dialog.open)dialog.showModal();}
+function componentNotSelected(component,reports){
+  return component?.expected===false&&component.selection==='not-selected'&&!(reports||[]).some(r=>r.definition_owner?.component===component.id);
+}
 function inferSequentialCompletion(state,reports){
   // Presentation-only policy: stock UDS/Zarf executes these operations in one
   // sequential CLI stream. Never alter raw reports or use another process,
   // missing output, elapsed time, or process disappearance as success evidence.
-  if(state.source?.kind!=='stock-process'||state.source.output_complete!==true||state.source.activity_available===false||state.status==='failed'||['concurrent','parallel'].includes(state.mode)||(state.packages||[]).filter(p=>p.status==='deploying').length>1)return reports;
+  if(state.source?.kind!=='stock-process'||state.source.output_complete!==true||state.source.activity_available===false||state.source.single_cli===false||state.status==='failed'||['concurrent','parallel'].includes(state.mode)||(state.packages||[]).filter(p=>p.status==='deploying').length>1)return reports;
   const errors=reports.filter(r=>r.kind==='deployment.error'||r.message==='action failed'||r.kind==='actions.command'&&r.label==='Failure action'),groups=new Map(),assumptions=new Map();
   const sameOwner=(a,b)=>a&&b&&a.package===b.package&&a.component===b.component;
   const noErrorBetween=(start,end)=>!errors.some(r=>r.timestamp>start&&r.timestamp<=end);
@@ -203,7 +219,7 @@ function inferSequentialCompletion(state,reports){
   if(state.completed_at&&!['waiting','deploying'].includes(state.status)){
     const finalStart=reports.filter(r=>r.kind==='package.start').reduce((a,b)=>!a||b.timestamp>=a.timestamp?b:a,null),pkg=state.packages?.slice(-1)[0];
     if(finalStart&&pkg&&finalStart.definition_owner?.package===pkg.id&&!errors.some(e=>e.timestamp>=finalStart.timestamp)){
-      const components=pkg.attempts?.slice(-1)[0]?.execution?.components||[],own=projected.filter(r=>r.definition_owner?.package===pkg.id&&r.timestamp>=finalStart.timestamp),last=own.filter(r=>!['package.start','component.start'].includes(r.kind)).reduce((a,b)=>!a||b.timestamp>=a.timestamp?b:a,null),groups=new Map();
+      const own=projected.filter(r=>r.definition_owner?.package===pkg.id&&r.timestamp>=finalStart.timestamp),components=(pkg.attempts?.slice(-1)[0]?.execution?.components||[]).filter(c=>!componentNotSelected(c,own)),last=own.filter(r=>!['package.start','component.start'].includes(r.kind)).reduce((a,b)=>!a||b.timestamp>=a.timestamp?b:a,null),groups=new Map();
       for(const r of own){
         if(!r.definition_owner.component||['package.start','component.start'].includes(r.kind))continue;
         const key=JSON.stringify([r.definition_owner.component,(r.kind.startsWith('helm.')||r.kind==='health.wait')&&r.resource?'chart:'+r.resource:r.kind.startsWith('images.')?r.kind:r.kind==='actions.command'?'action:'+(r.declaration_id||r.action_id||r.id):r.id]);
@@ -213,7 +229,7 @@ function inferSequentialCompletion(state,reports){
       const complete=groups.size&&[...groups.values()].every(items=>{const component=components.find(c=>c.id===items[0].definition_owner.component);return reportedStepState(items,component,state.checks,false,false).state==='succeeded';});
       const finalAction=last?.kind==='actions.command'&&last.message==='action succeeded'&&['Post-deploy action','Success action'].includes(last.label);
       const finalHealth=last?.kind==='health.wait'&&last.inferred_complete;
-      if(covered&&complete&&(finalAction||finalHealth))projected=projected.map(r=>r.id===finalStart.id?{...r,inferred_package_complete:true,inference_evidence:finalHealth?'Assumed complete: final Helm health checks were reached, every declared component was observed, all observed work is complete, and the CLI ended with a complete error-free capture. Native exit code was not observed.':'Assumed complete: final post-deploy action succeeded, every declared component was observed, all observed work is complete, and the CLI ended without a reported error'}:r);
+      if(covered&&complete&&(finalAction||finalHealth))projected=projected.map(r=>r.id===finalStart.id?{...r,inferred_package_complete:true,inference_evidence:finalHealth?'Assumed complete: final Helm health checks were reached, every selected component was observed, all observed work is complete, and the CLI ended with a complete error-free capture. Native exit code was not observed.':'Assumed complete: final post-deploy action succeeded, every selected component was observed, all observed work is complete, and the CLI ended without a reported error'}:r);
     }
   }
   return projected;
@@ -394,7 +410,11 @@ function renderStockPipeline(){
       rail.append(job);
     }
     parent.classList.toggle('no-observed-steps',!groups.size);
-    if(!groups.size)rail.append(node('span',items.some(r=>r.kind==='component.start')?'Component start reported; no action result captured.':'No CLI activity captured for this component.','unobserved-component'));
+    if(!groups.size){
+      const omitted=componentNotSelected(component,items),message=node(omitted?'button':'span',undefined,'unobserved-component'+(omitted?' selection-explanation':''));
+      if(omitted){message.type='button';message.setAttribute('aria-haspopup','dialog');message.setAttribute('aria-controls','not-selected-dialog');message.onclick=showNotSelected;message.append(stepIcon('not-selected'));}
+      message.append(document.createTextNode(omitted?'Not selected by the packaged bundle; no deployment expected.':items.some(r=>r.kind==='component.start')?'Component start reported; no action result captured.':'No CLI activity captured for this component.'));rail.append(message);
+    }
     const flow=node('div',undefined,'activity-flow');
     flow.append(rail);parent.append(flow);
     const pushed=items.filter(r=>r.kind==='images.push'&&r.resource),batchDone=items.filter(r=>r.kind==='images.push'&&r.message==='done pushing images').reduce((a,b)=>!a||b.timestamp>a.timestamp?b:a,null);
@@ -495,21 +515,22 @@ function renderStockPipeline(){
       if(active&&componentChoices.has(choiceKey)){const follow=node('button','Follow current component','follow-component');follow.dataset.focusKey='component-follow:'+p.id;follow.onclick=()=>{componentChoices.delete(choiceKey);canvas.dataset.stockKey='';render();};boardHeading.append(follow);}
       board.append(boardHeading);const list=node('div',undefined,'component-progress-list'),scrollKey=state.id+'/component-progress/'+p.id;list.dataset.scrollKey=scrollKey;list.dataset.choiceKey=choiceKey;list.setAttribute('aria-label',p.name+' component activity');
       for(const component of components){
-        const componentReports=own.filter(r=>r.definition_owner.component===component.id),current=activeComponent===component.id,row=node('button',undefined,'component-progress-row'+(current?' is-current':'')),jobs=node('span',undefined,'component-progress-jobs');
-        row.dataset.componentProgress=component.id;row.dataset.componentChoice=component.id;row.dataset.focusKey='component-inspect:'+p.id+':'+component.id;row.setAttribute('aria-label','Inspect '+p.name+' / '+component.id);row.setAttribute('aria-pressed',String(component.id===chosen));row.setAttribute('aria-controls',state.id+'/component-detail/'+p.id+'/'+component.id);row.title='Inspect component activity and packaged resources';row.append(node('strong',component.id,'component-progress-name'));
-        const componentKey=state.id+'/component-detail/'+p.id+'/'+component.id,expanded=component.id===chosen&&(disclosure.get(componentKey)??true),groups=[...groupedSteps(componentReports).values()];row.dataset.compact=String(expanded);
-        if(expanded&&groups.length){
-          const outcomes=groups.map(items=>reportedStepState(items,component,state.checks,state.status==='deploying'&&state.source.output_complete!==false,items.includes(latest))),counts={succeeded:0,running:0,failed:0,unknown:0};for(const outcome of outcomes)counts[outcome.state]++;
-          jobs.classList.add('component-counts');jobs.append(node('span',groups.length+' observed '+(groups.length===1?'step':'steps')));
-          for(const [kind,label] of [['succeeded','completed'],['running','running'],['failed','failed'],['unknown','unknown']])if(counts[kind])jobs.append(node('span',counts[kind]+' '+label,'component-step-count '+kind));
-          jobs.title=outcomes.filter(o=>o.state==='succeeded'&&!o.inferred).length+' reported/verified · '+outcomes.filter(o=>o.inferred).length+' inferred completed steps. Observed activity only, not a whole-component result.';
-        }else for(const items of groups){
+        const componentReports=own.filter(r=>r.definition_owner.component===component.id),notSelected=componentNotSelected(component,componentReports),current=activeComponent===component.id,row=node('button',undefined,'component-progress-row'+(current?' is-current':'')),jobs=node('span',undefined,'component-progress-jobs');
+        row.dataset.componentSelection=notSelected?'not-selected':'expected';
+        row.dataset.componentProgress=component.id;row.dataset.componentChoice=component.id;row.dataset.focusKey='component-inspect:'+p.id+':'+component.id;row.setAttribute('aria-label',(notSelected?'Explain Not selected for ':'Inspect ')+p.name+' / '+component.id);if(notSelected)row.setAttribute('aria-haspopup','dialog');row.setAttribute('aria-pressed',String(component.id===chosen));row.setAttribute('aria-controls',state.id+'/component-detail/'+p.id+'/'+component.id);row.title=notSelected?'Explain what Not selected means':'Inspect component activity and packaged resources';row.append(node('strong',component.id,'component-progress-name'));
+        const componentKey=state.id+'/component-detail/'+p.id+'/'+component.id,groups=[...groupedSteps(componentReports).values()];
+        for(const items of groups){
           const appearance=reportedStepState(items,component,state.checks,state.status==='deploying'&&state.source.output_complete!==false,items.includes(latest)),text=describe(items,component),job=node('span',undefined,'component-progress-step '+appearance.state);
           job.title=text.action+(text.target?' · '+text.target:'')+' — '+appearance.evidence;if(jobs.childElementCount){const arrow=node('span','→','component-step-connector');arrow.setAttribute('aria-hidden','true');job.append(arrow);}job.append(stepIcon(appearance.state),node('span',text.action));jobs.append(job);
         }
-        if(!jobs.childElementCount){if(current&&!expanded)jobs.append(stepIcon('running'));jobs.append(node('span',componentReports.length?'Start reported; no step result yet':'Not reported','component-progress-empty'));}
+        if(!jobs.childElementCount){
+          if(current)jobs.append(stepIcon('running'));
+          const status=node('span',undefined,'component-progress-empty');
+          if(notSelected){status.title=component.selection_evidence;status.append(stepIcon('not-selected'));}
+          status.append(document.createTextNode(notSelected?'Not selected':componentReports.length?'Start reported; no step result yet':'Not reported'));jobs.append(status);
+        }
         row.append(jobs);if(current){row.append(node('span','Current','component-progress-current'));}
-        row.onclick=()=>{manualPackages.add(disclosureKey);componentChoices.set(choiceKey,component.id);setDisclosure(componentKey,true);canvas.dataset.stockKey='';render();canvas.querySelector('[data-package="'+CSS.escape(p.id)+'"] [data-component="'+CSS.escape(component.id)+'"]').scrollIntoView({block:'nearest'});};list.append(row);
+        row.onclick=()=>{manualPackages.add(disclosureKey);componentChoices.set(choiceKey,component.id);setDisclosure(componentKey,true);canvas.dataset.stockKey='';render();canvas.querySelector('[data-package="'+CSS.escape(p.id)+'"] [data-component="'+CSS.escape(component.id)+'"]').scrollIntoView({block:'nearest'});if(notSelected)showNotSelected();};list.append(row);
       }
       list.onscroll=()=>{if(list.isConnected&&list.clientHeight)flowScroll.set(scrollKey,list.scrollTop);};board.append(list);section.append(board);
       requestAnimationFrame(()=>restoreComponentScroll(list));if(components.length===1)heading.insertBefore(artifact,heading.querySelector('.package-observation'));
@@ -887,7 +908,7 @@ $('nav-deployments').onclick=$('breadcrumb-home').onclick=()=>showPage('history'
 $('nav-pipeline').onclick=()=>{if(state)showPage('pipeline',true);};
 $('deployment-search').oninput=renderHistory;$('deployment-status').onchange=renderHistory;
 for(const [id,mode]of [['stage-grouping','stages'],['dependency-grouping','dependencies']])$(id).onclick=()=>{grouping=mode;renderPipeline();};
-window.addEventListener('popstate',()=>{const id=new URL(location.href).searchParams.get('deployment');if(id){if(id===run&&state)showPage('pipeline');else chooseRun(id,false);}else showPage('history');});
+window.addEventListener('popstate',()=>{const id=new URL(location.href).searchParams.get('deployment');if(id){autoFollowRuns=isActiveRun(discoveredRuns.find(r=>r.id===id));if(id===run&&state)showPage('pipeline');else chooseRun(id,false);}else showPage('history');});
 $('history').onchange=()=>chooseRun($('history').value);$('active-run').onclick=()=>{if(activeRunId)chooseRun(activeRunId);};
 $('activity-view').onclick=()=>{rawMode=false;render();};$('raw-view').onclick=()=>{rawMode=true;render();};
 $('attempt').onchange=()=>{attempt=$('attempt').value;autoAttempt=false;clearScope();render();loadLogs().catch(e=>notice(e.message));};
@@ -911,4 +932,4 @@ new ResizeObserver(scheduleWires).observe($('packages'));
 for(const id of ['logs','activity-feed'])$(id).addEventListener('wheel',()=>{const box=$(id);if(box.scrollTop+box.clientHeight<box.scrollHeight-40)$('follow').checked=false;},{passive:true});
 $('follow').onchange=()=>{if($('follow').checked){if(logHistory||pausedNew)loadLogs().catch(e=>notice(e.message));else{const box=$(rawMode?'logs':'activity-feed');box.scrollTop=box.scrollHeight;}}};
 window.addEventListener('online',()=>{if(state){refreshState();if($('follow').checked)loadLogs().catch(e=>notice(e.message));}});
-setInterval(()=>{if(pageView==='history')renderHistory();else if(state)render();},1000);setInterval(discover,5000);discover();
+setInterval(()=>{if(pageView==='history')renderHistory();else if(state)render();},1000);setInterval(discover,liveOnly?1000:5000);discover();

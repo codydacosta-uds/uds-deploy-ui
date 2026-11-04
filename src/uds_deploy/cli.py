@@ -10,18 +10,24 @@ import webbrowser
 from . import __version__
 
 
+def terminal(text,code):
+    if sys.stdout.isatty() and 'NO_COLOR' not in os.environ and os.environ.get('TERM','dumb')!='dumb':return '\033['+code+'m'+text+'\033[0m'
+    return text
+
+
 def doctor():
     supported=sys.platform in ('darwin','linux')
-    print('Platform: '+('supported' if supported else 'macOS or Linux required'))
-    missing=[]
+    checks=[('Platform',supported,'supported' if supported else 'macOS or Linux required')]
     for tool in ('ps','lsof','zstd'):
-        available=shutil.which(tool)
-        print(tool+': '+('available' if available else 'missing'))
-        if not available:missing.append(tool)
-    cli=shutil.which('uds') or shutil.which('zarf')
-    print('UDS/Zarf: '+('available' if cli else 'missing'))
-    if not cli:missing.append('uds or zarf')
-    return 0 if supported and not missing else 1
+        available=bool(shutil.which(tool));checks.append((tool,available,'available' if available else 'missing'))
+    available=bool(shutil.which('uds') or shutil.which('zarf'))
+    checks.append(('UDS/Zarf',available,'available' if available else 'missing'))
+    print('\n'+terminal('UDS Watch','1')+'\n')
+    for label,ready,detail in checks:
+        mark=terminal('OK  ' if ready else 'FAIL','32' if ready else '31')
+        print('  '+mark+'  '+f'{label:<10}'+detail)
+    print()
+    return 0 if all(ready for _,ready,_ in checks) else 1
 
 
 def bind_viewer(store,port=None):
@@ -29,7 +35,7 @@ def bind_viewer(store,port=None):
     try:return make_server(store,8765 if port is None else port)
     except OSError as error:
         if port is not None or error.errno!=errno.EADDRINUSE:raise
-        print('Default port 8765 is in use; choosing an available loopback port.',flush=True)
+        print(terminal('Port 8765 is busy; using a free local port.','33'),flush=True)
         return make_server(store,0)
 
 
@@ -57,7 +63,7 @@ def main(argv=None):
     except OSError:
         store.close();parser.error('Cannot bind the loopback port. Reuse your existing viewer URL or choose --port 0.')
     try:
-        print('\nUDS Watch: '+server.private_url+'\nCurrent session only. Keep this URL and logs private.\nCtrl+C stops only this viewer.\n',flush=True)
+        print('  '+terminal('Viewer ready','1;32')+'\n\n  '+terminal(server.private_url,'36')+'\n\n  Private session. Keep URL and logs private.\n  Ctrl+C stops the viewer, not your deployment.\n',flush=True)
         if not args.no_browser:webbrowser.open(server.private_url)
         server.serve_forever(poll_interval=.2)
     except KeyboardInterrupt:pass

@@ -20,7 +20,40 @@ cd uds-deploy-ui
 The last command opens the browser. Keep its terminal running.
 Use `./uds-watch --no-browser` to print the private URL instead.
 
-**No setup command, CLI replacement, shell hook, compiler or background service.**
+Running the viewer never installs anything or changes your shell or UDS binary.
+Terminal colors are automatic; set `NO_COLOR=1` to disable them.
+
+## Optional global shortcut
+
+```bash
+./install.sh /path/to/deployment-repo
+# Open a new terminal, then use the same watcher from any directory:
+uds watch
+uds watch --port 0
+```
+
+The installer links `~/.local/bin/uds-watch` to this checkout and adds the
+`uds watch` shortcut to Bash/Zsh startup files. Keep the checkout in place.
+Re-running installation does not duplicate configuration. Other `uds` commands
+pass through to the official CLI with their arguments and exit status unchanged.
+The installer also connects deployment output to the existing capture helper in
+`tasks/swf.yaml` inside the selected repository. You can pass a task-file path
+instead. It handles `uds deploy`, `./uds deploy`, and package deploy actions;
+existing capture hooks are left alone. No binary is replaced, and commands
+outside the configured tasks are not automatically captured.
+
+Only straightforward Bash task actions are supported. Unsupported layouts fail
+without guessing or rewriting unrelated commands.
+
+To remove only this installation's shortcut and shell configuration:
+
+```bash
+./uninstall.sh /path/to/deployment-repo
+```
+
+Open a new terminal afterward. Uninstallation removes its marked task capture
+wiring and shell shortcut, leaving the official UDS binary, pre-existing capture
+hooks, unrelated shell settings, and this checkout intact.
 
 ## Deploy normally
 
@@ -63,7 +96,9 @@ supported. No database, telemetry, external assets or permanent history is used.
 If you enabled CLI registration in 0.1.0a6, run **that version's**
 `./uds-watch uninstall` before updating, while CLI commands are idle. It restores
 the preserved native executable. Remove any older managed shell hook with its
-old version's uninstall command too. This version contains neither installer.
+old version's uninstall command too. Those binary-registration/automatic-capture
+installers are not included here; `install.sh` adds the shell shortcut and an
+explicit task-side capture tee, never a binary wrapper.
 
 ## Development
 
