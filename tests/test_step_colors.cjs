@@ -129,9 +129,10 @@ assert.equal(scope([begin,{...push,definition_owner:undefined},done])[2].definit
 assert.equal(scope([begin,push,report('package.start','starting deploy',2.5),done])[3].definition_owner,undefined,'A new package clears previous component scope');
 // Labeled policy regression: only owned package states can establish parallel
 // activity. A single native console focus never marks every package running.
-const activeStart=source.indexOf('  const activePackages=new Set('),activeEnd=source.indexOf('  let confirmedTotal=',activeStart);
+const activeStart=source.indexOf('function activePackageIds('),activeEnd=source.indexOf('\n}',activeStart)+2;
 assert.ok(activeStart>=0&&activeEnd>activeStart);
-const activePolicy=(packages,focus,running=true,limited=false)=>JSON.parse(vm.runInNewContext(source.slice(activeStart,activeEnd)+'JSON.stringify([...activePackages])',{state:{packages},focus,running,limited}));
+const activeIds=vm.runInNewContext('('+source.slice(activeStart,activeEnd)+')');
+const activePolicy=(packages,focus,running=true,limited=false)=>JSON.parse(JSON.stringify([...activeIds({packages,status:running?'deploying':'unknown',source:{output_complete:!limited}},focus?[focus]:[])]));
 assert.deepEqual(activePolicy(['a','b','c'].map(id=>({id,status:'deploying'})),null),['a','b','c']);
 assert.deepEqual(activePolicy(['a','b','c'].map(id=>({id,status:'unknown'})),{definition_owner:{package:'b'}}),['b']);
 assert.deepEqual(activePolicy([{id:'a',status:'deploying'}],null,false),[]);

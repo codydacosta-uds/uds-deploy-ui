@@ -190,6 +190,15 @@ MESSAGES={
 ANSI=re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]')
 
 
+def report_time(value):
+    """SDK log clock only; ingestion timestamps still control report ordering."""
+    if not isinstance(value,str) or not re.fullmatch(r'\d{4}-\d\d-\d\d[T ]\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)?',value):return None
+    try:
+        stamp=datetime.datetime.fromisoformat(value.replace('Z','+00:00')).timestamp()
+        return stamp if stamp>0 else None
+    except (ValueError,OverflowError,OSError):return None
+
+
 def report(raw):
     """Normalize source-specific diagnostic reports, never successful phases."""
     # UDS task spinners redraw with CR, then print the child's actual line.
@@ -212,11 +221,12 @@ def report(raw):
     try:
         item=json.loads(text)
         if not isinstance(item,dict):return None
-        message=item.get('msg');fields=item
+        message=item.get('msg');fields=item;source_time=report_time(item.get('time'))
     except ValueError:
         # v0.40 legacy console logger: ISO local date/time, level, SDK message.
         tokens=text.split(None,3)
         if len(tokens)!=4 or not re.fullmatch(r'\d{4}-\d\d-\d\d',tokens[0]) or not re.fullmatch(r'\d\d:\d\d:\d\d',tokens[1]) or tokens[2] not in ('INF','ERR','WRN','DBG'):return None
+        source_time=report_time(tokens[0]+'T'+tokens[1])
         remainder=tokens[3];message=None;fields={}
         for known in sorted(MESSAGES,key=len,reverse=True):
             if remainder==known or remainder.startswith(known+' '):
@@ -250,6 +260,7 @@ def report(raw):
     # Body fields are diagnostic claims, never authoritative execution identity.
     resource=fields.get('package') if kind=='package.start' else fields.get('name') if kind=='component.start' else fields.get('chart') or (fields.get('name') if kind.startswith(('images.','helm.')) else None)
     result=dict(kind=kind,label=label,message=message,resource=resource,action_id=hashlib.sha256(str(fields.get('cmd','')).encode()).hexdigest()[:12] if kind=='actions.command' else None,error=fields.get('err')[:4096] if isinstance(fields.get('err'),str) else None,evidence='cli-report',status='reported')
+    if source_time is not None:result['source_timestamp']=source_time
     percent=fields.get('complete')
     if message=='image push in progress' and resource and isinstance(percent,str) and re.fullmatch(r'\d+(?:\.\d+)?%',percent):
         value=float(percent[:-1])
@@ -369,9 +380,16 @@ def record_report(state,item,owners=None):
     key='/'.join([owner.get('package',''),owner.get('component') or '',kind,str(item.get('declaration_id') or item.get('action_id') or resource)])
     item['id']=key
     previous=next((r for r in reports if r['id']==key),None)
+    if isinstance(item.get('source_timestamp'),(int,float)):
+        if not previous:item['first_source_timestamp']=item['source_timestamp']
+        elif previous.get('first_source_timestamp') is not None:item['first_source_timestamp']=previous['first_source_timestamp']
+        else:item['timing_uncertain']=True
+    if previous and isinstance(item.get('log_id'),int) and item['log_id']!=previous.get('log_id') and (kind in ('package.start','component.start','helm.prepare','helm.install','helm.upgrade') or kind=='actions.command' and item['message']=='running command'):
+        item['timing_uncertain']=True
     if previous and isinstance(previous.get('first_log_id'),int):item['first_log_id']=previous['first_log_id']
     elif isinstance(item.get('log_id'),int):item.setdefault('first_log_id',item['log_id'])
     if previous:
+        if 'source_timestamp' not in item:previous.pop('source_timestamp',None)
         if kind.startswith('images.') and 'image_percent' not in item:previous.pop('image_percent',None)
         previous.update(item);item=previous
     else:

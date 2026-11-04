@@ -25,6 +25,6 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y lsof zsh
       - run: python3 -m unittest discover -s tests -p 'test_*.py' -v
-      - run: node tests/test_step_colors.cjs && node tests/test_discovery.cjs && node tests/test_log_search.cjs && node tests/test_yaml_highlighting.cjs
+      - run: node tests/test_step_colors.cjs && node tests/test_activity.cjs && node tests/test_discovery.cjs && node tests/test_log_search.cjs && node tests/test_yaml_highlighting.cjs
       - run: node --check src/uds_deploy/web/app.js && node --check src/uds_deploy/web/theme.js
       - run: git diff --check

@@ -84,6 +84,13 @@ be available. Arbitrary commands and scripts are not automatically recorded.
 - Captures are temporary. An attached viewer holds finished logs until it
   closes; download them first if you want to keep them. Restarting the viewer
   changes its URL and loses those held captures.
+- Component rows show the current/last operation, status and elapsed time; click
+  a row for individual steps. Package/component/operation timing uses SDK log
+  clocks, not watcher attachment time. `~` marks estimated spans; `—` means timing
+  is unavailable. No historical averages are stored.
+- Concurrent packages stay in separate scoped activity cards. Missing or
+  concurrent execution evidence never creates dependency arrows or inferred
+  success.
 - Unknown or missing evidence stays unknown. Green completion can be inferred
   from complete, error-free sequential CLI progress, including final Helm health
   checks; the UI explains that inference. Disappearance or silence alone is not
@@ -110,6 +117,8 @@ and existing stdin tee; it never replaces a CLI executable.
 ```bash
 python3 -m unittest discover -s tests -p 'test_*.py' -q
 node tests/test_step_colors.cjs
+node tests/test_activity.cjs
+node tests/test_discovery.cjs
 node tests/test_log_search.cjs
 node tests/test_yaml_highlighting.cjs
 ```

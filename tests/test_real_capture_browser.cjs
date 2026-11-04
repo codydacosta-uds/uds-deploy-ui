@@ -4,6 +4,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('nod
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 const source=process.env.UDS_WATCHER_SOURCE_URL,id=process.env.UDS_WATCHER_CAPTURE_ID,expectDone=process.env.UDS_WATCHER_EXPECT_DONE==='1';
 if(!source||!id)throw Error('Explicit real local capture source and ID required');
+const widths=(process.env.UDS_WATCHER_TEST_WIDTHS||'390,1280,1600').split(',').map(Number),expectTiming=process.env.UDS_WATCHER_EXPECT_TIMING==='1';
 const evidence=fs.mkdtempSync(path.join(os.tmpdir(),'uds-standalone-browser-'));
 function selectionOutline(e){const style=getComputedStyle(e),hex=style.getPropertyValue('--theme-border').trim()||'#8b96a4';return {shadow:style.boxShadow,color:'rgb('+hex.slice(1).match(/../g).map(value=>parseInt(value,16)).join(', ')+')'};}
 function contrast(a,b){const lum=s=>s.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;}).reduce((n,v,i)=>n+v*[.2126,.7152,.0722][i],0);const x=lum(a),y=lum(b);return(Math.max(x,y)+.05)/(Math.min(x,y)+.05);}
@@ -26,8 +27,11 @@ function contrast(a,b){const lum=s=>s.match(/[\d.]+/g).slice(0,3).map(Number).ma
     const rows=card.locator('.component-progress-row');assert.equal(await rows.count(),pkg.components.length);
     for(let j=0;j<pkg.components.length;j++){
      const before=await rows.nth(j).locator('.component-progress-step').allTextContents();
+     assert.ok(before.length<=1,'The overview is compact; individual operations belong in the detail view');
+     assert.equal(await rows.nth(j).locator('.component-step-connector').count(),0);
+     if(expectTiming&&!pkg.omitted.includes(pkg.components[j]))assert.notEqual(await rows.nth(j).locator('.activity-duration').innerText(),'—','SDK-clock component timing survives late replay');
      await rows.nth(j).click();assert.equal(await rows.nth(j).locator('.component-counts').count(),0,'Selection must not replace icons with summary counts');
-     if(expectDone)assert.deepEqual(await rows.nth(j).locator('.component-progress-step').allTextContents(),before,'Selected rows keep the same step icons and labels');
+     if(expectDone)assert.deepEqual(await rows.nth(j).locator('.component-progress-step').allTextContents(),before,'Selection keeps the compact overview; individual steps appear below');
      const detail=card.locator('.component-execution:visible');assert.equal(await detail.locator(':scope > summary .component-name').innerText(),pkg.components[j]);
      if(pkg.omitted.includes(pkg.components[j])){assert.equal(await page.locator('#not-selected-dialog').isVisible(),true);assert.equal(await page.locator('#not-selected-meaning').innerText(),"Optional component not enabled for this deployment. Not a failure and doesn't block completion.");assert.equal(await page.locator('#not-selected-title .step-status-icon.not-selected').innerText(),'!');await page.getByRole('button',{name:'Close explanation',exact:true}).click();assert.equal(await rows.nth(j).locator('.step-status-icon.not-selected').innerText(),'!');assert.match(await rows.nth(j).innerText(),/Not selected/);assert.equal(await detail.locator('.step-status-icon.not-selected').count(),1);assert.equal(await detail.locator('.stock-job').count(),0);}
      if(expectDone&&pkg.pushed.includes(pkg.components[j])){assert.equal(await detail.locator('.stock-job[data-report="images.push"]').getAttribute('data-step-status'),'succeeded');assert.equal(await detail.locator('.image-transfer:not(.succeeded)').count(),0,'Every image in the reported completed batch has its checkmark');}
@@ -43,7 +47,7 @@ function contrast(a,b){const lum=s=>s.match(/[\d.]+/g).slice(0,3).map(Number).ma
    const selection=await page.locator('.deployment-package.is-selected').evaluate(selectionOutline);assert.ok(selection.shadow.includes(selection.color),'Package selection uses the current theme border');
    if(expectDone){const green=await page.locator('.deployment-package.succeeded .step-status-icon').first().evaluate(e=>getComputedStyle(e).backgroundColor);for(const border of await cards.evaluateAll(items=>items.map(e=>getComputedStyle(e).borderLeftColor)))assert.equal(border,green,'Completed package borders stay green in both themes');}
    const resources=first.locator('.component-execution:visible .component-resources');if(await resources.count()&&!await resources.evaluate(e=>e.open))await resources.locator(':scope>summary').click();
-   for(const width of [390,1280,1600]){
+   for(const width of widths){
     await page.setViewportSize({width,height:1100});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'No horizontal page overflow');
     const board=cards.filter({has:page.locator('.component-progress-board:not([hidden])')}).first();
     if(await board.count()){
@@ -81,7 +85,7 @@ function contrast(a,b){const lum=s=>s.match(/[\d.]+/g).slice(0,3).map(Number).ma
   assert.equal(await page.locator('button button').count(),0,'Explanation controls must not create nested buttons');
   assert.equal(await page.evaluate(()=>state.status),capture.nativeStatus,'Presentation must not rewrite native outcome');
   assert.deepEqual(errors,[]);assert.deepEqual(writes,[]);assert.deepEqual(external,[]);
-  console.log('Standalone Playwright passed on real captures: hierarchy, every component, full YAML/highlighting, exact log anchors/download, both themes, 390/1280/1600 widths, no writes/external requests. Evidence: '+evidence);
+  console.log('Standalone Playwright passed on real captures: hierarchy, every component, full YAML/highlighting, exact log anchors/download, both themes, '+widths.join('/')+' widths, no writes/external requests. Evidence: '+evidence);
  }finally{
   if(browser)await browser.close();server.kill('SIGINT');await new Promise(resolve=>{if(server.exitCode!==null)return resolve();server.once('exit',resolve);});
  }
