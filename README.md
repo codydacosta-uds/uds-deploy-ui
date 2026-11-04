@@ -1,119 +1,169 @@
 # UDS Deploy UI
 
-A small, **read-only** browser viewer for UDS/Zarf deployment output.
+A lightweight, **read-only** browser viewer for UDS/Zarf deployments. See packages,
+components, steps, original logs and packaged YAML while you deploy normally.
 
-It shows packages, components, steps, original logs and packaged YAML.
-It does not deploy, retry, cancel or schedule anything.
+**Your terminal runs the deployment. This tool only watches it.** It cannot start,
+retry, cancel or schedule deployments. No database, service installation, build
+step, or Python/JavaScript dependency installation is required.
 
-## Run it
+## Quick start
 
-Requires macOS or Linux, Python 3.10+, `ps`, `lsof`, `zstd`, and UDS or Zarf.
-On RHEL, install a missing `lsof` with `sudo dnf install lsof`.
+You need **macOS or Linux**, **Bash or Zsh**, **Python 3.10+ available as `python3`**,
+Git, `ps`, `lsof`, `zstd`, and your normal **UDS executable on `PATH`**.
+
+### 1. Clone, check prerequisites and install the shell shortcut
 
 ```bash
 git clone https://github.com/codydacosta-uds/uds-deploy-ui.git
 cd uds-deploy-ui
 ./uds-watch doctor
-./uds-watch
-```
-
-The last command opens the browser. Keep its terminal running.
-Use `./uds-watch --no-browser` to print the private URL instead.
-
-Running the viewer never installs anything or changes your shell or UDS binary.
-Terminal colors are automatic; set `NO_COLOR=1` to disable them.
-
-## Optional global setup
-
-```bash
 ./install.sh
-# Open a new terminal, then use the same watcher from any directory:
-uds watch
-uds watch --port 0
 ```
 
-No repository path is needed. The installer links `~/.local/bin/uds-watch` to
-this checkout and configures Bash/Zsh. Keep the checkout in place.
+If `doctor` reports a missing prerequisite, fix it before continuing. For example,
+on RHEL a missing `lsof` can be installed with `sudo dnf install lsof`.
 
-The shell function opens the viewer for `uds watch` and copies output from
-plain `uds deploy ...` (or `uds d ...`) through the existing capture helper.
-Arguments and the native exit status are preserved. Other commands pass straight
-through to the official CLI. Put deployment flags after `deploy` to use capture.
+The installer adds a small Bash/Zsh function and links `~/.local/bin/uds-watch`
+to this checkout. It **does not replace UDS or edit your deployment repository**.
+Keep this checkout in place, and **open new terminals** so the function is loaded.
 
-Reinstalling updates the managed shell block without duplicating it. The
-installer never replaces the official UDS binary or edits deployment task files.
-
-To remove this global setup:
+### 2. In a new terminal, open the viewer
 
 ```bash
+uds watch
+```
+
+Your browser opens on **Current tasks**. Keep the viewer terminal running.
+
+### 3. In another new terminal, run your usual deployment
+
+```bash
+cd /path/to/your/deployment-project
+uds deploy /path/to/your/uds-bundle.tar.zst --confirm
+```
+
+Replace the example paths with your project and built bundle. Keep your usual
+credentials, configuration, environment variables and deployment flags. Put flags
+**after `deploy`**. The installed function captures output automatically and
+preserves the native command's arguments and exit status.
+
+In **Current tasks**, click the deployment name, status badge or **View** to open
+its details. Updates arrive automatically; you do not need to refresh the page.
+Use **← Current tasks** to return to the overview.
+
+**Already deploying?** You can attach while the command is still running if
+capture was enabled when it started. Output produced without capture cannot be
+recovered from terminal history.
+
+## Which commands are captured?
+
+| How you deploy | Capture |
+| --- | --- |
+| `uds deploy ...` or `uds d ...` in a new Bash/Zsh terminal after installation | Automatic |
+| `./uds deploy ...`, an absolute executable path, or `command uds ...` | Add an explicit tee, below |
+| `uds run ...`, a script, or a Python/concurrent runner | Add the tee around the actual deployment command inside the task or runner |
+| `zarf package deploy ...` or `uds zarf package deploy ...` | Add an explicit tee |
+
+The installer only intercepts plain `uds deploy` / `uds d`; it does not rewrite
+scripts or automatically capture commands launched by another program.
+
+### Using `./uds` or your own Bash task
+
+After installing, wrap the deployment command like this. The subshell keeps
+`exit` from closing an interactive terminal and preserves the deployment status:
+
+```bash
+(
+  ./uds deploy /path/to/your/uds-bundle.tar.zst --confirm 2>&1 | ("$HOME/.local/bin/uds-watch" capture || cat)
+  exit "${PIPESTATUS[0]}"
+)
+```
+
+Use **Bash** for this example, including when configuring a task's shell. Replace
+only the deployment command with your normal command and flags. The existing
+capture helper reads stdin; it never launches or takes ownership of UDS.
+
+Do not add a second tee to plain `uds deploy` when shell capture is already
+installed. For concurrent runners, capture each native invocation separately—not
+the mixed output of the whole runner. **Aggregate concurrent-runner tracking is
+not currently integrated**; individual invocations are separate deployments.
+
+Without capture, the viewer may find only partial diagnostic output and cannot
+reliably show every step.
+
+## Using the viewer
+
+- Click a component for its individual steps and packaged resources.
+- **Jump to activity** opens the exact captured log line for that activity, when
+  available. **View all logs** opens the general deployment output.
+- Package config buttons and **Bundle YAML** show the full **packaged** YAML,
+  not resolved external configuration or live Helm values.
+- `~` before a duration means approximate; `—` means reliable timing is unavailable.
+  Hover over a duration or status for its evidence.
+- Done may be inferred from complete, error-free sequential deployment output
+  and completed observed work. Silence or a disappearing process alone is never
+  success. Uncertain results remain unconfirmed/unknown.
+
+## Logs, privacy and session history
+
+Completed runs remain available **while the viewer process stays running**.
+Refreshing or closing the browser does not clear that session. Stopping or
+restarting the viewer loses its retained history and changes its private URL.
+**Download any logs you need before stopping it.** There is no permanent history
+or database.
+
+The server listens only on localhost. Treat its private URL, logs and packaged
+YAML as sensitive. The viewer never reads deployment TTYs or terminal history.
+Ctrl+C in the **viewer** terminal stops only the viewer—not your deployment.
+Optional cluster checks require an explicitly set `KUBECONFIG`; the viewer does
+not use a default cluster context.
+
+## Troubleshooting
+
+- **`uds watch` is not recognized:** open a new Bash/Zsh terminal after installing.
+  Run `type uds`; it should report a shell function. Ensure the official UDS
+  executable is still on `PATH`.
+- **No deployment or missing steps:** check the capture table above. The viewer
+  must run on the **same machine and as the same user** as the deployment. Capture
+  must have been enabled before the output you want to see was produced.
+- **Browser did not open:** run `uds watch --no-browser` and open the full private
+  URL printed in the terminal.
+- **Port conflict:** the default port is 8765, with automatic free-port fallback.
+  Use `uds watch --port 0` for a free port, or `--port NUMBER` for a fixed one.
+- **Remote host:** run the viewer on the deployment host, forward the same local
+  and remote port over SSH, and open the full private URL it prints.
+
+The report catalog is audited for UDS 0.40.0 / Zarf 0.88.0; other versions are
+best-effort. Windows and OCI-only deployments without local artifacts are not
+supported. Zarf-only workflows use an explicit capture tee rather than the UDS
+shell shortcut.
+
+## Updating, viewer-only use and uninstalling
+
+Update this checkout normally. Re-run `./install.sh` if its shell setup changes;
+reinstallation is idempotent. Backend updates load in a new viewer session—save
+any held logs before stopping an existing one.
+
+To run without installing shell shortcuts, use `./uds-watch` from the checkout.
+This opens the viewer but **does not enable automatic capture**. It can observe
+already-configured captures or partial diagnostic output.
+
+To remove the shell setup:
+
+```bash
+# From this checkout:
 ./uninstall.sh
 ```
 
-Open a new terminal afterward. Uninstallation leaves the official UDS binary,
-existing task capture hooks, unrelated shell settings, and this checkout intact.
+Open a new terminal afterward. Uninstallation removes only the managed function
+and launcher link. It preserves UDS, your deployment tasks, unrelated shell
+settings and this checkout. Remove separately configured task tees yourself if
+no longer wanted.
 
-## Deploy normally
-
-After installation, run `uds deploy ...` in another Bash/Zsh terminal.
-The shell function copies the native CLI's output; the viewer only reads it.
-
-Start the viewer before deployment or while it is still running. It never reads
-terminal history or attaches to a deployment's TTY.
-
-`./uds`, absolute executable paths, `command uds`, `uds run`, and commands inside
-scripts bypass this shell capture. Those workflows need an explicit capture tee
-configured separately. The existing pattern remains:
-
-```bash
-./uds deploy ... 2>&1 | ("$HOME/.local/bin/uds-watch" capture || cat)
-exit "${PIPESTATUS[0]}"  # Bash task owns the native status
-```
-
-Without shell capture or an explicit task tee, only partial diagnostic logs may
-be available. Arbitrary commands and scripts are not automatically recorded.
-
-## Things to know
-
-- Ctrl+C in the viewer terminal stops **only the viewer**. Your deployment stays
-  under the original CLI and deployment terminal.
-- The browser URL and logs are private. The server binds only to localhost.
-- The default port is 8765, with a free-port fallback if occupied. Use `--port 0`
-  for a free port or `--port NUMBER` to request a fixed one.
-- For SSH forwarding, use the same local and remote port and open the full
-  private URL printed by the remote viewer.
-- Captures are temporary. An attached viewer holds finished logs until it
-  closes; download them first if you want to keep them. Restarting the viewer
-  changes its URL and loses those held captures.
-- The viewer opens on **Current tasks**, a live overview that stays put until
-  you open a deployment. Use **← Current tasks** to return; explicit deployment
-  URLs still open directly into their detail view.
-- Component rows show the current/last operation, status and elapsed time; click
-  a row for individual steps. Package/component/operation timing uses SDK log
-  clocks, not watcher attachment time. `~` marks estimated spans; `—` means timing
-  is unavailable. No historical averages are stored.
-- Concurrent packages stay in separate scoped activity cards. Missing or
-  concurrent execution evidence never creates dependency arrows or inferred
-  success.
-- Unknown or missing evidence stays unknown. Green completion can be inferred
-  from complete, error-free sequential CLI progress, including final Helm health
-  checks; the UI explains that inference. Disappearance or silence alone is not
-  success.
-- Definitions are the **packaged** YAML, not resolved credentials or live Helm
-  values. Optional cluster metadata checks require explicit `KUBECONFIG` in the
-  viewer environment. No default cluster context is queried.
-
-The report catalog is audited for UDS 0.40.0 / Zarf 0.88.0. Other versions are
-best-effort. Windows and OCI-only deployments without local artifacts are not
-supported. No database, telemetry, external assets or permanent history is used.
-
-## Removing the previous automatic setup
-
-If you enabled CLI registration in 0.1.0a6, run **that version's**
-`./uds-watch uninstall` before updating, while CLI commands are idle. It restores
-the preserved native executable. Remove any older managed shell hook with its
-old version's uninstall command too. Those binary-registration installers are
-not included here. The current installer only configures the Bash/Zsh function
-and existing stdin tee; it never replaces a CLI executable.
+If you used executable registration in version 0.1.0a6, use **that version's**
+`./uds-watch uninstall` before updating, while commands are idle. That obsolete
+registration mechanism is not included here.
 
 ## Development
 
@@ -126,12 +176,12 @@ node tests/test_log_search.cjs
 node tests/test_yaml_highlighting.cjs
 ```
 
-Shared UI assets are guarded by `ui-assets.json`. Use `scripts/sync-ui.py` to
-synchronize reviewed changes across viewer distributions rather than restyling
-vendor copies independently. Capture producers/readers share `uds_deploy/output.py`,
-pinned by `capture-protocol.json`. Captures use the generic
-`uds-watch-output-<uid>` temporary directory, or the isolated
-`UDS_DEPLOY_RUNTIME_DIR/output` override. Other capture namespaces are not read.
+Shared UI assets are pinned by `ui-assets.json`; use `scripts/sync-ui.py` to keep
+reviewed changes identical across distributions. Capture producers/readers share
+`uds_deploy/output.py`, pinned by `capture-protocol.json`. Captures use
+`uds-watch-output-<uid>` in the system temporary directory, or
+`UDS_DEPLOY_RUNTIME_DIR/output` when explicitly configured. Other capture
+namespaces are not read.
 
 Isolated action-only SDK tests use `UDS_LIVE_INTEGRATION=1` or
 `UDS_USER_JOURNEY=1` with `UDS_TEST_BINARY=/path/to/uds`. Browser journeys also
