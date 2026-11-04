@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const source=fs.readFileSync(path.join(__dirname,'../src/uds_deploy/web/app.js'),'utf8');
 function fn(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0);return source.slice(start,source.indexOf('\n}',start)+2);}
-const context=vm.createContext({});vm.runInContext(fn('matrixJobLabel')+'\n'+fn('matrixAppearance')+'\n'+fn('matrixLayerStatus')+'\n'+source.slice(source.indexOf('function directDependencies('),source.indexOf('function displayedGroups(')),context);
+const context=vm.createContext({});vm.runInContext(fn('matrixJobLabel')+'\n'+fn('matrixAppearance')+'\n'+fn('matrixLayerStatus')+'\n'+fn('matrixJobParents')+'\n'+source.slice(source.indexOf('function directDependencies('),source.indexOf('function displayedGroups(')),context);
 for(const [status,appearance,label] of [['completed','succeeded','Done'],['failed','failed','Failed'],['deploying','running','Running'],['waiting','pending','Pending'],['not-started','unknown','Not started'],['unknown','unknown','Unconfirmed']]){
  assert.equal(context.matrixAppearance(status).state,appearance);assert.equal(context.matrixAppearance(status).label,label);
 }
@@ -14,4 +14,7 @@ const jobs=[{id:'prepare',dependencies:[]},{id:'a',dependencies:['prepare']},{id
 const edges=JSON.parse(JSON.stringify(context.directDependencies(jobs)));
 assert.deepEqual(edges,[{from:'prepare',to:'a'},{from:'prepare',to:'b'},{from:'a',to:'final'},{from:'b',to:'final'}]);
 assert.deepEqual(JSON.parse(JSON.stringify(context.directDependencies([{id:'a',dependencies:[]},{id:'b',dependencies:[]}]))),[],'Sharing a layer never invents an edge');
+const families=[{id:'root',layer:'work',dependencies:[]},{id:'child',layer:'work',dependencies:['root']},{id:'grandchild',layer:'work',dependencies:['root','child']},{id:'separate',layer:'work',dependencies:[]},{id:'join',layer:'work',dependencies:['root','separate']},{id:'later',layer:'later',dependencies:['root']}];
+assert.deepEqual(JSON.parse(JSON.stringify([...context.matrixJobParents(families)])),[['child','root'],['grandchild','child']],'Only unambiguous same-column declared children nest; joins and later columns stay separate');
+assert.equal(context.matrixJobParents(jobs).size,0,'Missing column metadata cannot create families');
 console.log('Matrix policy passed: explicit runner results, pending/failed/unconfirmed states, and declared dependency fan-out/join only.');

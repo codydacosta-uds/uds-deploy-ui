@@ -26,6 +26,8 @@ html[data-theme=light] body[data-mode=live] .status-icon.unknown { background: t
 .matrix-count { display: block; margin-top: 4px; font-size: 11px; color: var(--theme-muted,#626b76); }
 .matrix-jobs { display: grid; gap: 14px; padding: 16px 16px 0 0; }
 .matrix-single .matrix-jobs { padding: 0; }
+.matrix-family { min-width: 0; padding: 8px; border: 1px solid var(--theme-border,#cbd2da); border-radius: 10px; background: var(--theme-inset,#f0f2f4); }
+.matrix-family-children { display: grid; gap: 8px; margin: 8px 0 0 8px; padding-left: 8px; border-left: 1px solid var(--theme-border,#cbd2da); }
 .matrix-job { position: relative; z-index: 1; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 78px; padding: 12px; border: 1px solid var(--theme-border,#cbd2da); border-radius: 8px; background: var(--theme-panel,#fff); color: var(--theme-text,#34495e); text-align: left; }
 .matrix-job:disabled { opacity: 1; cursor: default; }
 body[data-mode=live] .matrix-job:hover { background: var(--theme-hover,#f5f7fa); }
@@ -120,7 +122,7 @@ body[data-mode=live] .component-progress-name { white-space: nowrap; overflow: h
 .component-overview-state.failed { color: var(--status-failed,#c62828); background: #ffebee; }
 html[data-theme=dark] .component-overview-state.succeeded { color: #85ddb0; background: #243b2e; }
 html[data-theme=dark] .component-overview-state.running { color: #9ecbff; background: #22364e; }
-html[data-theme=dark] .component-overview-state.failed { color: #ffb4a8; background: #432c2d; }
+html[data-theme=dark] .component-overview-state.failed { color: var(--status-failed); background: #432c2d; }
 .activity-duration { flex-shrink: 0; color: var(--theme-muted,#626b76); font: 11px/1.5 var(--font-code); font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
 body[data-mode=live] .component-progress-row:focus-visible { outline-offset: -2px; }
 body[data-mode=live] .component-progress-empty, body[data-mode=live] .unobserved-component { display: inline-flex; align-items: center; gap: 6px; }
@@ -270,7 +272,7 @@ html[data-theme=dark] .current-cli-label,html[data-theme=dark] .current-cli-cont
 html[data-theme=dark] .step-detail-result { color: var(--theme-text); background: #3b3f48; }
 html[data-theme=dark] .step-detail-result.succeeded { color: #85ddb0; background: #243b2e; }
 html[data-theme=dark] .step-detail-result.running { color: #9ecbff; background: #22364e; }
-html[data-theme=dark] .step-detail-result.failed { color: #ffb4a8; background: #432c2d; }
+html[data-theme=dark] .step-detail-result.failed { color: var(--status-failed); background: #432c2d; }
 html[data-theme=dark] body[data-mode=live] .step-log-link,html[data-theme=dark] body[data-mode=live] .current-cli-log-link { color: var(--theme-link); border-color: var(--theme-border); }
 .resource-namespace-pill { display: inline-flex; align-items: center; margin-left: auto; padding: 1px 7px; border: 1px solid #d8dcdf; border-radius: 999px; background: #eceef1; color: #555e69; font-size: 10px; font-weight: 500; line-height: 14px; white-space: nowrap; }
 .resource-table-scroll { margin: 10px 12px 12px; overflow-x: auto; border: 1px solid var(--detail-border); border-radius: 4px; }
@@ -327,9 +329,9 @@ html[data-theme=dark] body[data-mode=live] .output-toolbar { border-color: var(-
 html[data-theme=dark] body[data-mode=live] .output-state { background: var(--theme-inset); border-color: var(--theme-soft-border); color: var(--theme-muted); }
 @media (max-width: 760px) { body[data-mode=live] .output-toolbar .log-filters { flex-basis: 100%; max-width: none; }body[data-mode=live] .output-toolbar .output-actions { flex-basis: 100%; } }
 
-/* Neutral charcoal surfaces; status-circle fills keep their established colors. */
+/* Neutral charcoal surfaces with theme-aware status colors. */
 html[data-theme=dark] body[data-mode=live] {
-  --ink: #e2e5ea; --muted: #adb4bf; --line: #454954; --blue: #80bbf5; --green: #66d69b; --red: #ff9b8e;
+  --ink: #e2e5ea; --muted: #adb4bf; --line: #454954; --blue: #80bbf5; --green: #66d69b; --red: #fc7988; --status-failed: #fc7988;
   --theme-canvas: #151619; --theme-panel: #202227; --theme-inset: #292c33; --theme-hover: #31353d;
   --theme-border: #454954; --theme-soft-border: #363a43; --theme-text: #e2e5ea; --theme-muted: #adb4bf; --theme-link: #80bbf5;
   background: var(--theme-canvas); color: var(--theme-text);
@@ -347,6 +349,13 @@ html[data-theme=dark] body[data-mode=live] :is(#definition-dialog,#not-selected-
   background: var(--theme-panel); color: var(--theme-text); border-color: var(--theme-border);
 }
 html[data-theme=dark] body[data-mode=live] .summary { border-top-color: var(--status-running); }
+html[data-theme=dark] body[data-mode=live] .history-status.failed { background: var(--status-failed); color: #641a25; }
+html[data-theme=dark] body[data-mode=live] .status-icon.failed { background: #641a25; border-color: #641a25; color: var(--status-failed); }
+html[data-theme=dark] body[data-mode=live] :is(.run-status.failed,.package-observation.failed,.step-status-icon.failed,.evidence-badge.failed) { color: #641a25; }
+html[data-theme=dark] body[data-mode=live] .history-status.completed { background: #35b597; color: #003d36; }
+html[data-theme=dark] body[data-mode=live] .history-status.completed .status-icon { background: #003d36; border-color: #003d36; color: #35b597; }
+html[data-theme=dark] body[data-mode=live] .history-status.unknown { background: #414141; color: #e6e6e6; }
+html[data-theme=dark] body[data-mode=live] .status-icon.unknown { background: #2c2c2c; border-color: #a3a3a3; color: #e6e6e6; }
 html[data-theme=dark] body[data-mode=live] .summary-title,
 html[data-theme=dark] body[data-mode=live] .activity-heading,
 html[data-theme=dark] body[data-mode=live] .definition-heading,
@@ -493,7 +502,7 @@ html[data-theme=dark] body[data-mode=live] .kubernetes-state.succeeded { color: 
 html[data-theme=dark] body[data-mode=live] .execution-rail .stock-job.succeeded .stock-job-state { background: #243b2e; color: #85ddb0; }
 html[data-theme=dark] body[data-mode=live] .image-transfer.failed .image-transfer-state,
 html[data-theme=dark] body[data-mode=live] .kubernetes-state.failed { color: var(--red); }
-html[data-theme=dark] body[data-mode=live] .execution-rail .stock-job.failed .stock-job-state { background: #432c2d; color: #ffb4a8; }
+html[data-theme=dark] body[data-mode=live] .execution-rail .stock-job.failed .stock-job-state { background: #432c2d; color: var(--status-failed); }
 html[data-theme=dark] body[data-mode=live] .execution-rail .stock-job.unknown .stock-job-state { background: #3b3f48; color: #e2e5ea; }
 html[data-theme=dark] body[data-mode=live] .component-choice.has-error { color: var(--red); }
 html[data-theme=dark] body[data-mode=live] .deployment-package.failed,

@@ -6,7 +6,9 @@ const manifest=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
  const page=await browser.newPage({viewport:{width:1600,height:1100}}),errors=[],writes=[],external=[];
  page.on('pageerror',error=>errors.push(error.message));page.on('request',request=>{if(!['GET','HEAD'].includes(request.method()))writes.push(request.method());if(new URL(request.url()).origin!==new URL(manifest.url).origin)external.push(request.url());});
  await page.goto(manifest.url);
- const link=page.locator('.deployment-link').filter({hasText:'Concurrent SDK fixture'});await link.waitFor();await link.click();
+ let blockParentEntry=true;await page.route(/\/api\/deployments\/matrix-[a-f0-9]+$/,route=>blockParentEntry?route.abort():route.continue());
+ const link=page.locator('.deployment-link').filter({hasText:'Concurrent SDK fixture'});await link.waitFor();await link.locator('xpath=ancestor::tr').locator('.history-status').click();
+ await page.waitForFunction(()=>!!state?.matrix);blockParentEntry=false; // Entry must work using the already-loaded inventory, even with its detail endpoint unavailable.
  await page.locator('#packages #matrix-navigation #matrix-view').waitFor({state:'visible'});assert.equal(await page.locator('.package-execution').count(),0);
  assert.equal(await page.getByRole('heading',{name:'Package navigation',exact:true}).count(),1);assert.equal(await page.locator('#workspace > #matrix-view').count(),0);
  assert.equal(await page.locator('#group-toolbar').isVisible(),false,'Legacy grouping controls must not appear before inspecting a child');assert.equal(await page.locator('#graph-caption').isVisible(),false);
@@ -73,6 +75,20 @@ const manifest=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
  await page.getByRole('button',{name:'← Current tasks',exact:true}).click();await page.waitForSelector('#deployments-page:visible');await page.evaluate(()=>discover());
  assert.equal(await page.locator('[data-run="'+parentId+'"]').count(),1);
  for(const child of finalGroup.matrix.jobs.filter(job=>job.child_run_id))assert.equal(await page.locator('[data-run="'+child.child_run_id+'"]').count(),0,'Validated children belong to one parent row');
+ // Separate presentation-only fixture: the same SDK jobs/results, arranged in
+ // one declared column to exercise nested children and an ambiguous two-parent join.
+ const familyGroup=JSON.parse(JSON.stringify(finalGroup));familyGroup.matrix.layers=[{id:'related',label:'Fixture column'}];for(const child of familyGroup.matrix.jobs)child.layer='related';
+ const family=await browser.newPage({viewport:{width:1600,height:1100}});family.on('pageerror',error=>errors.push(error.message));family.on('request',request=>{if(!['GET','HEAD'].includes(request.method()))writes.push(request.method());if(new URL(request.url()).origin!==new URL(manifest.url).origin)external.push(request.url());});
+ await family.route('**/api/deployments',route=>route.fulfill({contentType:'application/json',body:JSON.stringify([familyGroup])}));
+ await family.route('**/api/deployments/'+parentId,route=>route.fulfill({contentType:'application/json',body:JSON.stringify(familyGroup)}));
+ const familyURL=new URL(manifest.url);familyURL.searchParams.set('deployment',parentId);await family.goto(familyURL.href);await family.waitForSelector('.matrix-summary');await family.locator('.matrix-summary').click();
+ const outer=family.locator('[data-matrix-family="prepare"]');assert.equal(await outer.count(),1);assert.equal(await outer.locator('[data-matrix-job]').count(),3,'A parent and its two declared children share an outer card');assert.equal(await family.locator('[data-matrix-job="verify"]').evaluate(el=>!!el.closest('.matrix-family')),false,'A multi-parent join must not be assigned to one family');
+ await family.waitForFunction(()=>document.querySelectorAll('#matrix-view .dependency-line').length===2);assert.equal(await family.locator('[data-source="prepare"]').count(),0,'Nested edges are represented by containment, not duplicate looping wires');
+ assert.equal(await family.locator('.dependency-line').evaluateAll(paths=>paths.every(path=>{const surface=path.closest('.matrix-surface'),right=id=>surface.querySelector('[data-matrix-job="'+id+'"]').getBoundingClientRect().right-surface.getBoundingClientRect().left;return path.getBBox().x>=Math.min(right(path.dataset.source),right(path.dataset.target))-.1;})),true,'Same-column join connectors stay beside the cards, not diagonally through the family');
+ for(const theme of ['light','dark']){if(await family.locator('html').getAttribute('data-theme')!==theme)await family.locator('#theme-toggle').click();for(const width of [1280,1600]){await family.setViewportSize({width,height:1100});await family.screenshot({path:path.join(manifest.evidence,manifest.mode+'-families-'+theme+'-'+width+'.png'),fullPage:true});assert.ok(await family.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));}}
+ await outer.locator('[data-matrix-job="work-a"]').click();await family.waitForFunction(()=>state?.packages?.[0]?.id==='work-a');assert.equal(await family.locator('[data-matrix-family="prepare"] [data-matrix-job="work-a"]').getAttribute('aria-pressed'),'true','Nested cards retain same-page child inspection');
+ await family.locator('#matrix-navigation').getByRole('button',{name:'List',exact:true}).click();assert.equal(await family.locator('.matrix-family').count(),0,'List view remains a flat list');assert.equal(await family.locator('.matrix-job').count(),4);
+ await family.close();
  assert.deepEqual(errors,[]);assert.deepEqual(writes,[]);assert.deepEqual(external,[]);
  fs.writeFileSync(path.join(manifest.directory,'browser.done'),JSON.stringify({parent:parentId,jobs:finalGroup.matrix.jobs.map(job=>({id:job.id,status:job.status,child:job.child_run_id}))}));
  console.log('Matrix SDK '+manifest.mode+' passed: real parallel children, declared joins, same-page components/logs, separate original streams, one parent task, light/dark 1280/1600.');

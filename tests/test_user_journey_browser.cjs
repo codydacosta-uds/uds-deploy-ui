@@ -17,7 +17,11 @@ async function until(test,message,timeout=25000){const deadline=Date.now()+timeo
   await page.waitForFunction(pid=>discoveredRuns.some(r=>r.source?.pid===pid),manifest.deploy_pid);
   const chosenRun=await page.evaluate(pid=>discoveredRuns.find(r=>r.source?.pid===pid).id,manifest.deploy_pid);
   await page.screenshot({path:path.join(manifest.evidence,manifest.shell+'-00-current-tasks.png'),fullPage:true});
-  await page.locator('[data-run="'+chosenRun+'"] .deployment-link').click();
+  let entryRequests=0;await page.route('**/api/deployments/'+chosenRun,async route=>{if(++entryRequests===1)await sleep(1000);await route.continue();});
+  await page.locator('[data-run="'+chosenRun+'"] .history-status').click();
+  assert.equal(await page.locator('#empty').isVisible(),true,'A status click shows loading immediately, before the deployment request completes');assert.match(await page.locator('#empty').innerText(),/Loading deployment/);
+  await page.goBack();await sleep(1200);assert.equal(await page.locator('#deployments-page').isVisible(),true,'A delayed status response must not reopen details after navigating back');
+  await page.locator('[data-run="'+chosenRun+'"] .history-status').click();
   await page.waitForSelector('.package-execution');await page.waitForFunction(pid=>state?.source?.pid===pid,manifest.deploy_pid);
   assert.ok(manifest.deploy_started_before_viewer,'Deployment must precede viewer startup');
   const logo=page.locator('.uds-brand img:visible');assert.equal(await logo.count(),1);assert.equal(await logo.evaluate(e=>e.complete&&e.naturalWidth>0),true);assert.equal(await logo.getAttribute('src'),'uds-logo.png');

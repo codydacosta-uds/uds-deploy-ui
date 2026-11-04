@@ -133,6 +133,7 @@ async function discover(){
 async function chooseRun(id,navigate=true,parent=null,snapshot=null){
   // Picking a historical run pins it; choosing an active run resumes following.
   if(navigate)autoFollowRuns=isActiveRun(discoveredRuns.find(r=>r.id===id));
+  snapshot=snapshot||discoveredRuns.find(item=>item.id===id&&item.matrix)||null;
   matrixParent=parent;
   generation++;const mine=generation;if(stream)stream.close();if(refreshTimer){clearTimeout(refreshTimer);refreshTimer=null;}
   run=id;state=null;selected=attempt=null;pipelineSelection=null;autoAttempt=true;full=true;rawMode=liveOnly;inspectorOpen=false;clearScope();$('history').value=id;
@@ -140,8 +141,9 @@ async function chooseRun(id,navigate=true,parent=null,snapshot=null){
   if(navigate)window.history.pushState(null,'',deploymentURL(parent?.id||id));else window.history.replaceState(null,'',deploymentURL(parent?.id||id));updateActiveLink();
   graphView='pipeline';
   if(parent)renderMatrixLoading(parent,id);
+  else if(!snapshot){showPage('pipeline');$('empty').querySelector('h2').textContent='Loading deployment…';$('empty').hidden=false;}
   try{
-    const current=snapshot||await request(`${api}/${id}`);if(mine!==generation)return;state=current;
+    const current=snapshot||await request(`${api}/${id}`);if(mine!==generation||!snapshot&&pageView==='history')return;state=current;
     if(state.matrix){$('nav-pipeline').disabled=false;$('breadcrumb-run').textContent='/ '+state.bundle_name;$('connection').textContent='● Live';$('connection').className='live';showPage('pipeline');notice('');return;}
     selected=(state.packages.find(p=>p.status==='deploying')||state.packages.find(p=>p.status==='failed')||state.packages[0]).id;
     $('nav-pipeline').disabled=false;$('breadcrumb-run').textContent=`/ ${state.bundle_name}${liveOnly?'':' · #'+state.id.slice(0,8)}`;
@@ -159,7 +161,7 @@ async function chooseRun(id,navigate=true,parent=null,snapshot=null){
       // Log volume never drives lifecycle refreshes. Only typed/state events do.
       if(!refreshTimer)refreshTimer=setTimeout(()=>{refreshTimer=null;refreshState(mine);},150);
     });notice('');
-  }catch(e){if(mine!==generation)return;const loading=$('matrix-child-loading');if(loading)loading.textContent='Job details unavailable. Close or select another job.';notice(e.message);}
+  }catch(e){if(mine!==generation||pageView==='history')return;const loading=$('matrix-child-loading');if(loading)loading.textContent='Job details unavailable. Close or select another job.';else if(!state)$('empty').querySelector('h2').textContent='Deployment details unavailable';notice(e.message);}
 }
 async function refreshState(mine=generation){try{const current=await request(`${api}/${run}`);if(mine!==generation)return;const old=attempt;state=current;render();if(!full&&old!==attempt)await loadLogs();}catch(e){notice(e.message);}}
 function selectPackage(id){selected=id;attempt=null;autoAttempt=true;full=false;inspectorOpen=true;clearScope();render();loadLogs().catch(e=>notice(e.message));$('job-inspector').scrollIntoView({block:'start'});}
@@ -737,6 +739,16 @@ function matrixAppearance(status){
 function matrixLayerStatus(jobs){
   return jobs.some(j=>j.status==='failed')?'failed':jobs.every(j=>j.status==='completed')?'completed':jobs.some(j=>j.status==='deploying')?'deploying':jobs.every(j=>j.status==='not-started')?'not-started':jobs.some(j=>['unknown','not-started'].includes(j.status))?'unknown':'waiting';
 }
+// Nest only a single declared, same-column prerequisite. Joins stay separate.
+function matrixJobParents(jobs){
+  const byId=new Map(jobs.map(job=>[job.id,job])),parents=new Map();
+  for(const edge of directDependencies(jobs)){
+    const from=byId.get(edge.from),to=byId.get(edge.to);
+    if(from.layer===undefined||from.layer!==to.layer)continue;
+    if(!parents.has(edge.to))parents.set(edge.to,[]);parents.get(edge.to).push(edge.from);
+  }
+  return new Map([...parents].filter(([,ids])=>ids.length===1).map(([id,ids])=>[id,ids[0]]));
+}
 function matrixNavigation(group,actions=null){
   const banner=node('section',undefined,'deployment-status-bar session-activity-heading');banner.id='matrix-navigation';banner.setAttribute('aria-label','Package navigation');
   const header=node('div',undefined,'deployment-status-heading'),titleLine=node('div',undefined,'pipeline-title-line'),layouts=node('div',undefined,'pipeline-layout-toggle');titleLine.append(node('h2','Package navigation'));
@@ -772,6 +784,7 @@ function renderMatrix(group){
   if(panel.dataset.key===key){updateDurations();return;}panel.dataset.key=key;
   const scroll=panel.querySelector('.matrix-scroll')?.scrollLeft||0,focus=document.activeElement?.dataset.focusKey;
   const viewport=node('div',undefined,'matrix-scroll'),surface=node('div',undefined,'matrix-surface'+(packageLayout==='list'?' matrix-list':'')),svg=svgNode('svg');svg.classList.add('matrix-wires');svg.setAttribute('aria-hidden','true');surface.append(svg);
+  const nested=packageLayout==='pipeline'?matrixJobParents(group.matrix.jobs):new Map();
   for(const layer of group.matrix.layers){
     const jobs=group.matrix.jobs.filter(job=>job.layer===layer.id);if(!jobs.length)continue;
     const grouped=jobs.length>1,appearance=matrixAppearance(matrixLayerStatus(jobs)),details=node(grouped?'details':'div',undefined,'matrix-layer'+(grouped?'':' matrix-single')),disclosureKey='matrix/'+group.id+'/'+layer.id;details.dataset.matrixLayer=layer.id;
@@ -781,7 +794,7 @@ function renderMatrix(group){
       summary.dataset.focusKey='matrix-layer:'+layer.id;summary.onclick=()=>disclosure.set(disclosureKey,!details.open);
       summary.append(stepIcon(appearance.state));text.append(node('strong',jobs.length+' jobs'),node('span',counts+' · '+appearance.label,'matrix-count'));summary.append(text);details.append(summary);
     }
-    const children=node('div',undefined,'matrix-jobs');
+    const children=node('div',undefined,'matrix-jobs'),cards=new Map();
     for(const job of jobs){
       const view=matrixAppearance(job.status),button=node('button',undefined,'matrix-job '+view.state),content=node('span',undefined,'matrix-job-content'),top=node('span',undefined,'matrix-job-heading');
       button.dataset.matrixJob=job.id;button.dataset.focusKey='matrix-job:'+job.id;button.dataset.jobStatus=job.status;button.setAttribute('aria-pressed',String(job.child_run_id===run));button.disabled=!job.child_run_id;
@@ -790,8 +803,16 @@ function renderMatrix(group){
       content.append(top,meta);button.append(stepIcon(view.state),content);
       button.title=job.packages.join(', ')+'\n'+(job.dependencies.length?'After: '+job.dependencies.join(', '):'No prerequisites')+'\n'+(job.exit_code!==null?'Runner reported exit '+job.exit_code:'No final exit result reported')+'\n'+(job.child_run_id?'Open captured components and logs below':'Captured output is not available for this job yet');
       if(job.child_run_id)button.onclick=()=>{const close=matrixParent?.id===group.id&&run===job.child_run_id;chooseRun(close?group.id:job.child_run_id,false,close?null:group,close?group:null);};
-      children.append(button);
+      if(nested.has(job.id))button.dataset.matrixParent=nested.get(job.id);
+      cards.set(job.id,button);
     }
+    function family(job){
+      const dependents=jobs.filter(child=>nested.get(child.id)===job.id),card=cards.get(job.id);
+      if(!dependents.length)return card;
+      const outer=node('div',undefined,'matrix-family'),inset=node('div',undefined,'matrix-family-children');outer.dataset.matrixFamily=job.id;outer.setAttribute('role','group');outer.setAttribute('aria-label',matrixJobLabel(job)+' and dependent jobs');
+      for(const child of dependents)inset.append(family(child));outer.append(card,inset);return outer;
+    }
+    for(const job of jobs)if(!nested.has(job.id))children.append(family(job));
     details.append(children);if(grouped)details.ontoggle=scheduleWires;surface.append(details);
   }
   viewport.append(surface);panel.replaceChildren(viewport);viewport.scrollLeft=scroll;
@@ -801,12 +822,14 @@ function renderMatrix(group){
 function drawMatrixWires(){
   const group=state?.matrix?state:matrixParent,surface=$('matrix-view')?.querySelector('.matrix-surface');if(!group||!surface||$('matrix-view').hidden)return;
   const root=surface.getBoundingClientRect(),svg=surface.querySelector('svg'),boxes=new Map(),drawn=new Set();svg.replaceChildren();svg.setAttribute('width',surface.scrollWidth);svg.setAttribute('height',surface.scrollHeight);
-  for(const job of group.matrix.jobs){const layer=[...surface.querySelectorAll('[data-matrix-layer]')].find(el=>el.dataset.matrixLayer===job.layer),element=layer.tagName!=='DETAILS'||layer.open?[...layer.querySelectorAll('[data-matrix-job]')].find(el=>el.dataset.matrixJob===job.id):layer.querySelector('summary'),box=element.getBoundingClientRect();boxes.set(job.id,{left:box.left-root.left,right:box.right-root.left,y:(box.top+box.bottom)/2-root.top});}
+  for(const job of group.matrix.jobs){const layer=[...surface.querySelectorAll('[data-matrix-layer]')].find(el=>el.dataset.matrixLayer===job.layer),element=layer.tagName!=='DETAILS'||layer.open?[...layer.querySelectorAll('[data-matrix-job]')].find(el=>el.dataset.matrixJob===job.id):layer.querySelector('summary'),box=element.getBoundingClientRect();boxes.set(job.id,{layer:job.layer,left:box.left-root.left,right:box.right-root.left,y:(box.top+box.bottom)/2-root.top});}
+  const nested=packageLayout==='pipeline'?matrixJobParents(group.matrix.jobs):new Map();
   for(const edge of directDependencies(group.matrix.jobs)){
+    if(nested.get(edge.to)===edge.from)continue; // The outer card already shows this relationship.
     const a=boxes.get(edge.from),b=boxes.get(edge.to);if(!a||!b||a.left===b.left&&a.right===b.right&&a.y===b.y)continue;
     const key=JSON.stringify([a,b]);if(drawn.has(key))continue;drawn.add(key);
-    const path=svgNode('path'),middle=(a.right+b.left)/2;
-    path.setAttribute('d',a.left===b.left?`M${a.right},${a.y} C${a.right+24},${a.y} ${b.right+24},${b.y} ${b.right},${b.y}`:`M${a.right},${a.y} C${middle},${a.y} ${middle},${b.y} ${b.left},${b.y}`);
+    const path=svgNode('path'),middle=(a.right+b.left)/2,outside=Math.max(a.right,b.right)+24;
+    path.setAttribute('d',a.layer===b.layer?`M${a.right},${a.y} C${outside},${a.y} ${outside},${b.y} ${b.right},${b.y}`:`M${a.right},${a.y} C${middle},${a.y} ${middle},${b.y} ${b.left},${b.y}`);
     path.classList.add('dependency-line');path.dataset.source=edge.from;path.dataset.target=edge.to;svg.append(path);
   }
 }
