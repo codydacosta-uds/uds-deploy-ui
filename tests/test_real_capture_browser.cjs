@@ -97,6 +97,7 @@ function contrast(a,b){const lum=s=>s.match(/[\d.]+/g).slice(0,3).map(Number).ma
    }
    await page.setViewportSize({width:1600,height:1100});
    const config=first.getByRole('button',{name:'View Zarf package config',exact:true});await config.click();await page.waitForSelector('#definition-content .yaml-key');
+   const namePill=page.locator('#definition-title .definition-package-name');assert.equal(await namePill.innerText(),await first.getAttribute('data-package'));const pillStyle=await namePill.evaluate(e=>{const s=getComputedStyle(e);return {bg:s.backgroundColor,color:s.color,radius:s.borderRadius};});assert.equal(pillStyle.radius,'999px');assert.ok(contrast(pillStyle.bg,pillStyle.color)>=4.5,'Package name pill stays readable in each theme');
    const definition=await page.evaluate(async()=>{const response=await fetch(api+'/'+run+'/packages/'+encodeURIComponent(state.packages[0].id)+'/definition');return response.json();});
    assert.equal(definition.values_hidden,false);assert.ok(!definition.yaml.includes('[value hidden]'));assert.ok((await page.locator('#definition-content').textContent())===definition.yaml,'Highlighting preserves the entire real config');
    assert.equal(await page.locator('#definition-content img, #definition-content script, #definition-content iframe').count(),0);

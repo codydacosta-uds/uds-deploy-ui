@@ -436,7 +436,8 @@ function renderYaml(parent,text){
 async function showDefinition(packageId=null){
   const mine=++definitionRequest,dialog=$('definition-dialog'),id=run;
   const packageKind=state.packages.find(p=>p.id===packageId)?.artifact_info?.kind;
-  $('definition-title').textContent=packageId?packageId+' · '+(packageKind==='ZarfInitConfig'?'Zarf init config':'Zarf package config'):state.bundle_name+' · Bundle YAML';
+  if(packageId)$('definition-title').replaceChildren(node('span',packageId,'definition-package-name'),document.createTextNode(' · '+(packageKind==='ZarfInitConfig'?'Zarf init config':'Zarf package config')));
+  else $('definition-title').textContent=state.bundle_name+' · Bundle YAML';
   const reference=packageId?state.packages.find(p=>p.id===packageId)?.artifact_info?.reference:null;
   $('definition-reference').textContent=reference?'Reference: '+reference:'';$('definition-reference').hidden=!reference;
   $('definition-note').textContent='Packaged definition, including values and commands. External configuration and CLI overrides are not applied.';

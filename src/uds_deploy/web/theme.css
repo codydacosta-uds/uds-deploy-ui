@@ -107,6 +107,8 @@ body[data-mode=live] .summary { display: grid; grid-template-columns: minmax(300
 body[data-mode=live] .summary-title { grid-column: 1; justify-content: flex-start; flex-wrap: wrap; gap: 12px; padding: 6px 16px 2px; border-bottom: 0; }
 .hierarchy-pill { display: inline-flex; flex: 0 0 auto; align-items: center; width: max-content; padding: 1px 7px; border-radius: 999px; background: #e6e8ec; color: #555e69; font: 500 10px/16px var(--font-ui); white-space: nowrap; }
 html[data-theme=dark] .hierarchy-pill { background: #343943; color: #d2d8e2; }
+.definition-package-name { display: inline-block; padding: 2px 10px; border-radius: 999px; background: #f3dfad; color: #79520d; vertical-align: middle; }
+html[data-theme=dark] .definition-package-name { background: #59421d; color: #f2cd7b; }
 .hierarchy-pill[data-kind=bundle] { background: #f3dfad; color: #79520d; }
 html[data-theme=dark] .hierarchy-pill[data-kind=bundle] { background: #59421d; color: #f2cd7b; }
 .component-identity .activity-duration { margin-left: auto; }
