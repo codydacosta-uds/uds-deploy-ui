@@ -13,11 +13,18 @@ async function until(test,message,timeout=25000){const deadline=Date.now()+timeo
   // Keep Playwright's default launch flags, including its mock Keychain flags.
   browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:1600,height:1100}});
   const errors=[],writes=[];page.on('pageerror',e=>errors.push(e.message));page.on('request',request=>{if(!['GET','HEAD'].includes(request.method()))writes.push(request.method());});
+  // Isolate this journey from unrelated same-user deployments. Detail/output
+  // responses remain the real NativeReader data for the actual SDK process.
+  await page.route('**/api/deployments',async route=>{const response=await route.fetch();await route.fulfill({response,json:(await response.json()).filter(run=>run.source?.pid===manifest.deploy_pid)});});
   await page.goto(event.url);await page.waitForSelector('#deployments-page:visible');
   await page.waitForFunction(pid=>discoveredRuns.some(r=>r.source?.pid===pid),manifest.deploy_pid);
   const chosenRun=await page.evaluate(pid=>discoveredRuns.find(r=>r.source?.pid===pid).id,manifest.deploy_pid);
   await page.screenshot({path:path.join(manifest.evidence,manifest.shell+'-00-current-tasks.png'),fullPage:true});
-  await page.locator('[data-run="'+chosenRun+'"] .deployment-link').click();
+  let entryRequests=0;await page.route('**/api/deployments/'+chosenRun,async route=>{if(++entryRequests===1)await sleep(1000);await route.continue();});
+  await page.locator('[data-run="'+chosenRun+'"] .history-status').click();
+  assert.equal(await page.locator('#empty').isVisible(),true,'A status click shows loading immediately, before the deployment request completes');assert.match(await page.locator('#empty').innerText(),/Loading deployment/);
+  await page.goBack();await sleep(1200);assert.equal(await page.locator('#deployments-page').isVisible(),true,'A delayed status response must not reopen details after navigating back');
+  await page.locator('[data-run="'+chosenRun+'"] .history-status').click();
   await page.waitForSelector('.package-execution');await page.waitForFunction(pid=>state?.source?.pid===pid,manifest.deploy_pid);
   assert.ok(manifest.deploy_started_before_viewer,'Deployment must precede viewer startup');
   const logo=page.locator('.uds-brand img:visible');assert.equal(await logo.count(),1);assert.equal(await logo.evaluate(e=>e.complete&&e.naturalWidth>0),true);assert.equal(await logo.getAttribute('src'),'uds-logo.png');
@@ -29,6 +36,8 @@ async function until(test,message,timeout=25000){const deadline=Date.now()+timeo
   assert.equal(await card.locator('.component-counts').count(),0);
   const pending=card.locator('[data-component-progress="verify"]');assert.equal(await pending.locator('.component-overview-state').innerText(),'Pending');assert.equal(await pending.locator('.component-current-operation').innerText(),'—');assert.equal(await pending.locator('.activity-duration').innerText(),'—');assert.equal(await pending.locator('.step-status-icon.running').count(),0,'Pending is neutral, not spinning');
   for(const theme of ['dark','light']){if(await page.locator('html').getAttribute('data-theme')!==theme)await page.locator('#theme-toggle').click();const icon=await pending.locator('.step-status-icon.pending').evaluate(e=>({color:getComputedStyle(e).color,animation:getComputedStyle(e).animationName,left:getComputedStyle(e,'::before').borderLeftWidth,right:getComputedStyle(e,'::before').borderRightWidth}));assert.equal(icon.color,theme==='dark'?'rgb(241, 163, 43)':'rgb(154, 103, 0)');assert.equal(icon.animation,'none');assert.equal(icon.left,'2px');assert.equal(icon.right,'2px');}
+  for(const theme of ['light','dark']){if(await page.locator('html').getAttribute('data-theme')!==theme)await page.locator('#theme-toggle').click();const edges=await card.evaluate(element=>({outer:getComputedStyle(element).borderLeftColor,inner:getComputedStyle(element.querySelector('.component-progress-row.is-current')).borderLeftColor}));assert.equal(edges.outer,'rgb(31, 117, 203)');assert.equal(edges.inner,'rgba(0, 0, 0, 0)','Only the outer package keeps the active blue edge; the selected row corner remains clean');}
+  if(await page.locator('html').getAttribute('data-theme')!=='light')await page.locator('#theme-toggle').click();
   const skipped=card.locator('[data-component-progress="optional-not-selected"]');
   assert.equal(await skipped.getAttribute('data-component-selection'),'not-selected');assert.match(await skipped.innerText(),/Not selected/);
   assert.equal(await skipped.locator('.component-progress-step').count(),0,'Unselected inventory is neutral, not pending work');

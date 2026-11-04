@@ -48,6 +48,19 @@ class NativeTests(unittest.TestCase):
         self.assertEqual(labels[before['action_id']],'Pre-deploy action')
         self.assertEqual(labels[after['action_id']],'Post-deploy action')
         self.assertNotEqual(before['action_id'],after['action_id'])
+    def test_injector_handoff_is_live_activity_not_a_success_callback(self):
+        messages=('creating Zarf injector resources','adding archived binary configmaps of registry image to the cluster')
+        for message in messages:
+            for raw in ('2026-11-04 12:32:20 INF '+message,json.dumps({'msg':message})):
+                item=report(raw)
+                self.assertEqual(item['kind'],'cluster.bootstrap')
+                self.assertEqual(item['status'],'reported');self.assertEqual(item['evidence'],'cli-report')
+        self.output.write_text('2026-11-04 12:32:17 INF waiting for cluster connection\n2026-11-04 12:32:20 INF creating Zarf injector resources\n')
+        self.refresh();session=next(iter(self.reader.sessions.values()))
+        self.assertTrue(any(e['type']=='cli.report' and e['data']['kind']=='cluster.bootstrap' for e in session['events']))
+        self.assertTrue(all(p['status']=='unknown' for p in session['state']['packages']))
+        self.assertTrue(all(phase['status']=='pending' for p in session['state']['packages'] for c in p['attempts'][0]['execution']['components'] for phase in c['phases']))
+
     def test_action_descriptions_and_full_error_commands_share_one_declared_action(self):
         action=self.package['components'][0]['actions']['onDeploy']['before'][0]
         action['description']='Prepare actual resource'
@@ -79,6 +92,19 @@ class NativeTests(unittest.TestCase):
             reader=NativeReader();self.addCleanup(reader.close);reader.attach(process)
             self.assertEqual([p['id'] for p in next(iter(reader.sessions.values()))['state']['packages']],['actual-alias'])
         self.assertEqual(native.command_args(['uds','--unknown-arity','deploy','bundle.tar.zst']),[])
+    def test_children_reuse_inventory_without_sharing_package_selection(self):
+        (self.root/'bundle.tar.zst').write_bytes(b'fixture archive')
+        binary=self.root/'uds';binary.write_bytes(b'fixture executable')
+        self.files[-1]['path']=str(binary)
+        self.definition['packages'].append(dict(name='second-alias',ref='2'))
+        with patch('uds_deploy.native.metadata',return_value=(self.definition,{'actual-alias':self.package,'second-alias':self.package})) as decode:
+            for index,alias in enumerate(('actual-alias','second-alias')):
+                self.reader.attach(dict(self.process,pid=os.getpid()+index,args=['uds','deploy','bundle.tar.zst','-p',alias]))
+            self.assertEqual(decode.call_count,1)
+        sessions=list(self.reader.sessions.values())
+        self.assertEqual([[p['id'] for p in session['state']['packages']] for session in sessions],[['actual-alias'],['second-alias']])
+        self.assertEqual([set(session['definitions']) for session in sessions],[{'actual-alias'},{'second-alias'}])
+
     def test_late_attachment_scopes_from_args_and_preserves_original_bytes(self):
         raw=b'2026-11-01 12:00:00 INF performing Helm install chart=podinfo\n  exact CRLF  \r\n\xff\n'
         self.output.write_bytes(raw);self.refresh()

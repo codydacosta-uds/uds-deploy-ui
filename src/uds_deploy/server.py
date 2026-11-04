@@ -3,6 +3,7 @@
 There is deliberately no deployment engine, start API, retry API, or database.
 """
 import base64
+from copy import deepcopy
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -14,6 +15,7 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 from .model import package_by_id
 from .native import NativeReader, processes
 from .pipeline import view
+from .runs import RunReader
 
 WEB = Path(__file__).parent / 'web'
 STATIC_ASSETS = {
@@ -29,12 +31,20 @@ class WatcherStore:
     live_only = True
     def __init__(self):
         self.reader = NativeReader()
+        self.runs = RunReader()
         self.lock = threading.RLock()
+    def refresh(self):
+        self.reader.refresh();self.runs.refresh(self.reader.sessions)
     def list(self, summary=False):
-        with self.lock:return sorted(self.reader.list(),key=lambda state:state['created_at'],reverse=True)
+        with self.lock:
+            self.refresh();grouped=self.runs.child_ids()
+            states=self.runs.list()+[deepcopy(session['state']) for session in self.reader.sessions.values() if session['pid'] not in self.reader.excluded and session['state']['id'] not in grouped]
+            return sorted(states,key=lambda state:state['created_at'],reverse=True)
     def get(self, run, private=False):
         if private:raise PermissionError('No saved deployment credentials or retry context')
-        with self.lock:return self.reader.get(run)
+        with self.lock:
+            self.refresh()
+            return self.runs.get(run) if run.startswith('matrix-') else deepcopy(self.reader.sessions[run]['state'])
     def processes(self):
         with self.lock:return [{key:row[key] for key in ('pid','tool','kind')} for row in processes()]
     def definition(self, run, package=None):
@@ -90,7 +100,11 @@ def make_server(store, port=8765):
                 if parts==['api','deployments']:
                     self.body(store.list(summary=True));return
                 if parts[:2]!=['api','deployments'] or len(parts)<3:raise KeyError('Not found')
-                run=parts[2];state=view(store.get(run));tail=parts[3:]
+                run=parts[2];state=store.get(run);tail=parts[3:]
+                if state.get('matrix'):
+                    if tail:raise KeyError('Select a captured child for definitions or original logs')
+                    self.body(state);return
+                state=view(state)
                 if not tail:self.body(state);return
                 if tail==['pipeline']:self.body(state['pipeline']);return
                 if tail==['packages']:self.body(state['packages']);return

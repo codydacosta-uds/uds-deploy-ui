@@ -8,7 +8,7 @@ function fixture(runs=[active,old]){
  const elements=new Map(),chosen=[],notices=[];
  const element=id=>{if(!elements.has(id))elements.set(id,{value:'',dataset:{},replaceChildren(){},append(){}});return elements.get(id);};
  const context=vm.createContext({URL,location:{href:'http://127.0.0.1/fixture/'},api:'/fixture/api/deployments',
-  discovering:false,autoFollowRuns:true,liveOnly:true,pageView:'pipeline',initialRoute:false,run:'old',state:old,discoveredRuns:[old],
+  discovering:false,autoFollowRuns:true,matrixParent:null,liveOnly:true,pageView:'pipeline',initialRoute:false,run:'old',state:old,discoveredRuns:[old],
   $:element,node:()=>({}),renderHistory(){},updateActiveLink(){},notice:message=>notices.push(message),
   request:async url=>url.endsWith('/processes')?[]:runs,
   chooseRun:async(id,navigate)=>{chosen.push({id,navigate});context.run=id;context.state=runs.find(r=>r.id===id);},
@@ -30,6 +30,7 @@ function fixture(runs=[active,old]){
   const test=fixture();Object.assign(test.context,settings);await test.context.discover();assert.deepEqual(test.chosen,[],'Preserve manual/history/non-live selection');
  }
  const concurrent=fixture([active,{...old,status:'deploying'}]);await concurrent.context.discover();assert.deepEqual(concurrent.chosen,[]);
+ const grouped=fixture([{...active,id:'matrix-parent',matrix:{jobs:[]}}]);grouped.context.matrixParent={id:'matrix-parent'};grouped.context.run='native-child';await grouped.context.discover();assert.deepEqual(grouped.chosen,[],'A parent matrix must not steal focus from its selected child');assert.equal(grouped.context.matrixParent.status,'deploying','Keep the parent matrix fresh while watching child logs');
  // Exercise the actual manual-selection policy before chooseRun's DOM work.
  const manualStart=source.indexOf('async function chooseRun('),manualEnd=source.indexOf('  generation++;',manualStart);
  assert.ok(manualEnd>manualStart);vm.runInContext(source.slice(manualStart,manualEnd)+'}',c);
@@ -49,5 +50,6 @@ function fixture(runs=[active,old]){
  const landing=fixture();Object.assign(landing.context,{initialRoute:true,pageView:'history',run:null,state:null});await landing.context.discover();await landing.context.discover();assert.deepEqual(landing.chosen,[],'The populated landing page stays put across discovery polls');assert.equal(landing.context.pageView,'history');
  const linked=fixture();Object.assign(linked.context,{initialRoute:true,pageView:'history',run:null,state:null});linked.context.location.href+='?deployment=new';await linked.context.discover();assert.deepEqual(linked.chosen,[{id:'new',navigate:false}],'An explicit deployment URL still opens its detail view');
  assert.match(source,/setInterval\(discover,liveOnly\?1000:5000\)/,'Live discovery polls each second without changing legacy viewers');
+ assert.doesNotMatch(source,/api\/processes/,'Current tasks must not fetch or display raw PID diagnostics');
  console.log('Discovery policy passed: one-second polling, next-run following, manual pinning, concurrency safety, bounded requests, stable Current tasks landing and explicit deep links.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
