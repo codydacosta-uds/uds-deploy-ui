@@ -28,6 +28,7 @@ function contrast(a,b){const lum=s=>s.match(/[\d.]+/g).slice(0,3).map(Number).ma
   assert.equal(await page.locator('.uds-brand-title').innerText(),'Deploy');assert.equal(await page.title(),'UDS Deploy Portal');assert.equal(await page.locator('link[rel="icon"]').getAttribute('href'),'doug.png');
   assert.equal(await page.locator('#artifact-kind').innerText(),'Bundle');assert.equal(await page.locator('#artifact-kind').getAttribute('data-kind'),'bundle');
   assert.equal(await page.locator('.session-details').count(),0,'Redundant session metadata is not rendered');
+  assert.equal(await page.locator('.timing-note').count(),0);assert.ok(await page.locator('.activity-duration').evaluateAll(times=>times.length>0&&times.every(e=>!!e.title)),'Timing explanations remain on duration tooltips');
   const activityLink=page.locator('.current-cli-log-link').first();assert.equal(await activityLink.innerText(),'Jump to activity');
   const activityLine=await page.evaluate(()=>(state.reports||[]).reduce((a,b)=>!a||b.timestamp>a.timestamp?b:a,null).log_id);
   await activityLink.click();await page.waitForFunction(()=>!logLoading&&document.querySelector('#logs .log-anchor'));assert.equal(Number(await page.locator('#logs .log-anchor').getAttribute('data-log-id')),activityLine);await page.getByRole('button',{name:'Close logs',exact:true}).click();
