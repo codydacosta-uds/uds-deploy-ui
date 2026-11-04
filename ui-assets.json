@@ -2,7 +2,7 @@
   "schema_version": 1,
   "description": "Shared deployment viewer UI: identical HTML, JavaScript, CSS, fonts and artwork in every consumer.",
   "files": {
-    "app.js": "76a97edc99eb0b145533d058e93328ed4f3e73f520ca45832a7a7e9b6f6ed98f",
+    "app.js": "0256ac789367ced901706ac05ec26d2fac0dc92530319d33e5b302236b2a85e7",
     "dev-reload.js": "80b29356e533a33e8f8ca247de99ed2adf594db40f0114219a959c5080cd51fe",
     "doug.png": "103edb15969ddbfb806c7cab541c418596e0e96ef667e0b5c3ad0dc17e2bbcb2",
     "fonts/.gitattributes": "c1859ddc3c9e9a98a52b125c0e84b072eace66e5f8139615688cf64193301e49",
@@ -15,7 +15,7 @@
     "fonts/NOTICE.txt": "6f5bad894210ba721b497b4dd7617bf881d493623a7d26d6d15afb1e2f894097",
     "index.html": "86ec200bb8859c9d886875c7b857281d48818e0cbc5367aefc3d84d3886d6638",
     "style.css": "49d30df7c2879fdefd31f6c359daf977f73823433c0d864db1e8066a5bfe1df7",
-    "theme.css": "a47371a76f66751e96f8a1f5476d29b0fdc04e742ee0bb2f19df321d0f58572c",
+    "theme.css": "1755f1202b9c432eb4f321500a31cbcfdf401d971db38f132bfa916f637da940",
     "theme.js": "e81d3238d2fe4513c3d3567aa39cf36bd452416767ed182291ff07c50b385e4c",
     "uds-logo-on-dark.png": "1647899c1cab50f9748ba681efe6e06b361579a26d44107c8c37baa6ab4541b0",
     "uds-logo.png": "60f06c876b1752ff8036b2dad7d251ef147e122f9e377c877546ca6b3a676a8e"

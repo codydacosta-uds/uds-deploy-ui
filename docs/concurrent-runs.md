@@ -52,7 +52,9 @@ configuration, credentials or kubeconfig.
 
 - Generate a new `uuid.uuid4().hex` ID for each run. Times are Unix seconds.
 - Layers, selected jobs, package selectors and dependency job IDs come from the
-  **existing runner**, not log order. The plan cannot change mid-run.
+  **existing runner**, not log order. The plan cannot change mid-run. UI headings
+  use actual job names or multi-job counts, not the runner's console layer labels;
+  any number of declared groups is supported within the bounds below.
 - One job represents one SDK invocation. Batch selectors belong in its
   `packages` list. Each selected package belongs to exactly one job. Map package
   dependencies to job IDs, excluding dependencies within the same batched job.

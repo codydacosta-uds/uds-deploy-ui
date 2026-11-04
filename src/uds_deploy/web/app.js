@@ -582,8 +582,8 @@ function renderStockPipeline(){
   canvas.append(matrixParent?matrixNavigation(matrixParent,actions):banner);
   if(matrixParent){
     renderMatrix(matrixParent);
-    const job=matrixParent.matrix.jobs.find(job=>job.child_run_id===state.id),layer=matrixParent.matrix.layers.find(layer=>layer.id===job?.layer),context=node('div',undefined,'matrix-child-context');context.dataset.selectedMatrixJob=job?.id||'';
-    context.append(node('h2','Selected job · '+[layer?.label,job?.label].filter(Boolean).join(' / '),'packages-heading'));
+    const job=matrixParent.matrix.jobs.find(job=>job.child_run_id===state.id),context=node('div',undefined,'matrix-child-context');context.dataset.selectedMatrixJob=job?.id||'';
+    context.append(node('h2','Selected job · '+(job?matrixJobLabel(job):'Captured invocation'),'packages-heading'));
     for(const control of $('target').querySelectorAll('.session-yaml,.cluster-connection'))context.append(control);
     canvas.append(context);if(lanes.childElementCount)canvas.append(lanes);
   }
@@ -726,6 +726,9 @@ function renderPipeline(){
   }
   surface.append(columns);canvas.replaceChildren(surface);canvas.scrollLeft=left;canvas.scrollTop=top;$('jobs').replaceChildren(jobsList);scheduleWires();
 }
+function matrixJobLabel(job){
+  return job.packages.length>1?job.packages.length+'-package batch':job.label;
+}
 function matrixAppearance(status){
   return {state:({completed:'succeeded',deploying:'running',waiting:'pending',failed:'failed'})[status]||'unknown',label:({completed:'Done',deploying:'Running',waiting:'Pending',failed:'Failed','not-started':'Not started',unknown:'Unconfirmed'})[status]||'Unconfirmed'};
 }
@@ -760,23 +763,26 @@ function renderMatrix(group){
   const scroll=panel.querySelector('.matrix-scroll')?.scrollLeft||0,focus=document.activeElement?.dataset.focusKey;
   const viewport=node('div',undefined,'matrix-scroll'),surface=node('div',undefined,'matrix-surface'+(packageLayout==='list'?' matrix-list':'')),svg=svgNode('svg');svg.classList.add('matrix-wires');svg.setAttribute('aria-hidden','true');surface.append(svg);
   for(const layer of group.matrix.layers){
-    const jobs=group.matrix.jobs.filter(job=>job.layer===layer.id),appearance=matrixAppearance(matrixLayerStatus(jobs));
-    const details=node('details',undefined,'matrix-layer'),disclosureKey='matrix/'+group.id+'/'+layer.id;details.dataset.matrixLayer=layer.id;details.open=disclosure.has(disclosureKey)?disclosure.get(disclosureKey):appearance.state==='running'||jobs.some(job=>job.child_run_id===state.id);
-    const summary=node('summary',undefined,'matrix-summary'),text=node('span'),counts=jobs.filter(j=>j.status==='completed').length+' / '+jobs.length+' jobs completed';
-    summary.dataset.focusKey='matrix-layer:'+layer.id;summary.onclick=()=>disclosure.set(disclosureKey,!details.open);
-    summary.append(stepIcon(appearance.state));text.append(node('strong',layer.label),node('span',counts+' · '+appearance.label,'matrix-count'));summary.append(text);details.append(summary);
+    const jobs=group.matrix.jobs.filter(job=>job.layer===layer.id);if(!jobs.length)continue;
+    const grouped=jobs.length>1,appearance=matrixAppearance(matrixLayerStatus(jobs)),details=node(grouped?'details':'div',undefined,'matrix-layer'+(grouped?'':' matrix-single')),disclosureKey='matrix/'+group.id+'/'+layer.id;details.dataset.matrixLayer=layer.id;
+    if(grouped){
+      details.open=disclosure.has(disclosureKey)?disclosure.get(disclosureKey):appearance.state==='running'||jobs.some(job=>job.child_run_id===state.id);
+      const summary=node('summary',undefined,'matrix-summary'),text=node('span'),counts=jobs.filter(j=>j.status==='completed').length+' / '+jobs.length+' jobs completed';
+      summary.dataset.focusKey='matrix-layer:'+layer.id;summary.onclick=()=>disclosure.set(disclosureKey,!details.open);
+      summary.append(stepIcon(appearance.state));text.append(node('strong',jobs.length+' jobs'),node('span',counts+' · '+appearance.label,'matrix-count'));summary.append(text);details.append(summary);
+    }
     const children=node('div',undefined,'matrix-jobs');
     for(const job of jobs){
       const view=matrixAppearance(job.status),button=node('button',undefined,'matrix-job '+view.state),content=node('span',undefined,'matrix-job-content'),top=node('span',undefined,'matrix-job-heading');
       button.dataset.matrixJob=job.id;button.dataset.focusKey='matrix-job:'+job.id;button.dataset.jobStatus=job.status;button.setAttribute('aria-pressed',String(job.child_run_id===state.id));button.disabled=!job.child_run_id;
-      top.append(node('strong',job.label),node('span',view.label,'matrix-job-status'));
+      top.append(node('strong',matrixJobLabel(job)),node('span',view.label,'matrix-job-status'));
       const meta=node('span',undefined,'matrix-job-meta');meta.append(node('span',job.started_at?'Started '+clock(job.started_at):'Not started'),durationNode({start:job.started_at,end:job.completed_at,running:job.status==='deploying',evidence:'Runner-reported job start/end time'}));
       content.append(top,meta);button.append(stepIcon(view.state),content);
       button.title=job.packages.join(', ')+'\n'+(job.dependencies.length?'After: '+job.dependencies.join(', '):'No prerequisites')+'\n'+(job.exit_code!==null?'Runner reported exit '+job.exit_code:'No final exit result reported')+'\n'+(job.child_run_id?'Open captured components and logs below':'Captured output is not available for this job yet');
       if(job.child_run_id)button.onclick=()=>{const close=matrixParent?.id===group.id&&run===job.child_run_id;chooseRun(close?group.id:job.child_run_id,false,close?null:group);};
       children.append(button);
     }
-    details.append(children);details.ontoggle=scheduleWires;surface.append(details);
+    details.append(children);if(grouped)details.ontoggle=scheduleWires;surface.append(details);
   }
   viewport.append(surface);panel.replaceChildren(viewport);viewport.scrollLeft=scroll;
   if(focus)Array.from(panel.querySelectorAll('[data-focus-key]')).find(el=>el.dataset.focusKey===focus)?.focus({preventScroll:true});
@@ -785,7 +791,7 @@ function renderMatrix(group){
 function drawMatrixWires(){
   const group=state?.matrix?state:matrixParent,surface=$('matrix-view')?.querySelector('.matrix-surface');if(!group||!surface||$('matrix-view').hidden)return;
   const root=surface.getBoundingClientRect(),svg=surface.querySelector('svg'),boxes=new Map(),drawn=new Set();svg.replaceChildren();svg.setAttribute('width',surface.scrollWidth);svg.setAttribute('height',surface.scrollHeight);
-  for(const job of group.matrix.jobs){const layer=[...surface.querySelectorAll('[data-matrix-layer]')].find(el=>el.dataset.matrixLayer===job.layer),element=layer.open?[...layer.querySelectorAll('[data-matrix-job]')].find(el=>el.dataset.matrixJob===job.id):layer.querySelector('summary'),box=element.getBoundingClientRect();boxes.set(job.id,{left:box.left-root.left,right:box.right-root.left,y:(box.top+box.bottom)/2-root.top});}
+  for(const job of group.matrix.jobs){const layer=[...surface.querySelectorAll('[data-matrix-layer]')].find(el=>el.dataset.matrixLayer===job.layer),element=layer.tagName!=='DETAILS'||layer.open?[...layer.querySelectorAll('[data-matrix-job]')].find(el=>el.dataset.matrixJob===job.id):layer.querySelector('summary'),box=element.getBoundingClientRect();boxes.set(job.id,{left:box.left-root.left,right:box.right-root.left,y:(box.top+box.bottom)/2-root.top});}
   for(const edge of directDependencies(group.matrix.jobs)){
     const a=boxes.get(edge.from),b=boxes.get(edge.to);if(!a||!b||a.left===b.left&&a.right===b.right&&a.y===b.y)continue;
     const key=JSON.stringify([a,b]);if(drawn.has(key))continue;drawn.add(key);

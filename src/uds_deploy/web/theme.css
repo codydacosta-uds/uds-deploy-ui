@@ -20,6 +20,7 @@
 .matrix-summary strong { display: block; font-size: 13px; line-height: 20px; }
 .matrix-count { display: block; margin-top: 4px; font-size: 11px; color: var(--theme-muted,#626b76); }
 .matrix-jobs { display: grid; gap: 14px; padding: 16px 16px 0 0; }
+.matrix-single .matrix-jobs { padding: 0; }
 .matrix-job { position: relative; z-index: 1; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 78px; padding: 12px; border: 1px solid var(--theme-border,#cbd2da); border-radius: 8px; background: var(--theme-panel,#fff); color: var(--theme-text,#34495e); text-align: left; }
 .matrix-job:disabled { opacity: 1; cursor: default; }
 .matrix-job.running,.matrix-job[aria-pressed=true] { border-color: var(--status-running); }
