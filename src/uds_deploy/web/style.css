@@ -138,7 +138,6 @@ button:hover { background: #35343c; }.text-button { background: #282a33; color: 
 .activity-text strong { color: #e0d7e8; }.activity-resource, .activity-entry time, .feed-empty { color: #b8a7c6; }
 #logs { background: #151319; border-color: #43394c; color: #d3c8df; }.log-time { color: #a797b7; }.log-package { color: #aec7ed; }
 .empty { color: #c3b7cd; }.empty code { background: #28232f; color: #d2c2e2; border-color: #53475f; }
-.processes { color: #b4a9c0; font-size: 12px; }.processes p { padding: 8px 10px; border-left: 2px solid #7f7791; }
 body[data-mode=live] .history-filters, body[data-mode=live] #history-note, body[data-mode=live] .operations-heading > span { display: none; }
 /* Light, read-only execution view: a segmented rail and expandable step log. */
 body[data-mode=live] { --ink: #333; --muted: #70777b; --line: #d8dcdf; --blue: #1f75cb; --green: #108548; --red: #dd2b0e; --status-success: #108548; --status-running: #1f75cb; --status-failed: #dd2b0e; background: #f5f6f7; color: #333; }

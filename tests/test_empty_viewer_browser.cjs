@@ -22,7 +22,7 @@ function contrast(a,b){const lum=s=>s.match(/[\d.]+/g).slice(0,3).map(Number).ma
    for(const width of [390,1280,1600]){await page.setViewportSize({width,height:1000});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.screenshot({path:path.join(evidence,theme+'-'+width+'.png'),fullPage:true});}
   }
   // Isolated network-outage regression, not injected deployment/lifecycle data.
-  await page.route('**/api/processes',route=>route.abort());await page.evaluate(()=>discover());assert.equal(await page.locator('#notice').isVisible(),true,'Connection failures must remain visible even when healthy status is hidden');
+  await page.route('**/api/deployments',route=>route.abort());await page.evaluate(()=>discover());assert.equal(await page.locator('#notice').isVisible(),true,'Connection failures must remain visible even when healthy status is hidden');
   assert.deepEqual(errors,[]);assert.deepEqual(writes,[]);assert.deepEqual(external,[]);console.log('Real empty viewer passed: approved light/dark UDS logos, no ghost table headings, readable contrast, generic deployment instructions, responsive widths. Evidence: '+evidence);
  }finally{
   if(browser)await browser.close();server.kill('SIGINT');await new Promise(resolve=>{if(server.exitCode!==null)return resolve();server.once('exit',resolve);});fs.rmSync(home,{recursive:true,force:true});

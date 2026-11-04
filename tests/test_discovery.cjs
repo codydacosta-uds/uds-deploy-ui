@@ -49,5 +49,6 @@ function fixture(runs=[active,old]){
  const landing=fixture();Object.assign(landing.context,{initialRoute:true,pageView:'history',run:null,state:null});await landing.context.discover();await landing.context.discover();assert.deepEqual(landing.chosen,[],'The populated landing page stays put across discovery polls');assert.equal(landing.context.pageView,'history');
  const linked=fixture();Object.assign(linked.context,{initialRoute:true,pageView:'history',run:null,state:null});linked.context.location.href+='?deployment=new';await linked.context.discover();assert.deepEqual(linked.chosen,[{id:'new',navigate:false}],'An explicit deployment URL still opens its detail view');
  assert.match(source,/setInterval\(discover,liveOnly\?1000:5000\)/,'Live discovery polls each second without changing legacy viewers');
+ assert.doesNotMatch(source,/api\/processes/,'Current tasks must not fetch or display raw PID diagnostics');
  console.log('Discovery policy passed: one-second polling, next-run following, manual pinning, concurrency safety, bounded requests, stable Current tasks landing and explicit deep links.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

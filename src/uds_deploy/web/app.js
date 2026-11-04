@@ -120,11 +120,6 @@ async function discover(){
   try{
   const runs=await request(api);discoveredRuns=runs;const previous=$('history').value;
   renderHistory();
-  if(liveOnly){
-    const processes=await request(new URL('api/processes',location.href).pathname);
-    $('processes').replaceChildren();
-    for(const process of processes)$('processes').append(node('p',`${process.tool} ${process.kind} · PID ${process.pid} · process detected; detail available only for task-captured output.`));
-  }
   if(!runs.length){$('connection').textContent='Local viewer ready';$('connection').className=liveOnly?'live':'';return;}
   const key=runs.map(r=>`${r.id}:${r.status}`).join('|');
   if($('history').dataset.optionsKey!==key){$('history').replaceChildren();for(const item of runs){const o=node('option',`${item.environment} / ${item.bundle_name} · ${item.status} · ${new Date(item.created_at*1000).toLocaleString()}`);o.value=item.id;$('history').append(o);}$('history').dataset.optionsKey=key;}
