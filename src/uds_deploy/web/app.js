@@ -991,7 +991,7 @@ if(liveOnly){
   $('history-empty').querySelector('h2').textContent='Ready to watch a deployment';
   $('history-empty').querySelector('p').textContent='With capture setup enabled, open a new terminal and run your usual uds deploy command. This viewer does not start deployments.';
   $('log-status').textContent='Original output retained.';
-  document.title='UDS · Local watcher';
+  document.title='UDS Deploy Portal';
 }
 $('nav-deployments').onclick=$('breadcrumb-home').onclick=()=>showPage('history',true);
 $('nav-pipeline').onclick=()=>{if(state)showPage('pipeline',true);};
