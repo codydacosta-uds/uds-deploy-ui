@@ -48,6 +48,19 @@ class NativeTests(unittest.TestCase):
         self.assertEqual(labels[before['action_id']],'Pre-deploy action')
         self.assertEqual(labels[after['action_id']],'Post-deploy action')
         self.assertNotEqual(before['action_id'],after['action_id'])
+    def test_injector_handoff_is_live_activity_not_a_success_callback(self):
+        messages=('creating Zarf injector resources','adding archived binary configmaps of registry image to the cluster')
+        for message in messages:
+            for raw in ('2026-11-04 12:32:20 INF '+message,json.dumps({'msg':message})):
+                item=report(raw)
+                self.assertEqual(item['kind'],'cluster.bootstrap')
+                self.assertEqual(item['status'],'reported');self.assertEqual(item['evidence'],'cli-report')
+        self.output.write_text('2026-11-04 12:32:17 INF waiting for cluster connection\n2026-11-04 12:32:20 INF creating Zarf injector resources\n')
+        self.refresh();session=next(iter(self.reader.sessions.values()))
+        self.assertTrue(any(e['type']=='cli.report' and e['data']['kind']=='cluster.bootstrap' for e in session['events']))
+        self.assertTrue(all(p['status']=='unknown' for p in session['state']['packages']))
+        self.assertTrue(all(phase['status']=='pending' for p in session['state']['packages'] for c in p['attempts'][0]['execution']['components'] for phase in c['phases']))
+
     def test_action_descriptions_and_full_error_commands_share_one_declared_action(self):
         action=self.package['components'][0]['actions']['onDeploy']['before'][0]
         action['description']='Prepare actual resource'

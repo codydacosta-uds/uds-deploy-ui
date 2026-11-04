@@ -2,7 +2,7 @@
   "schema_version": 1,
   "description": "Shared deployment viewer UI: identical HTML, JavaScript, CSS, fonts and artwork in every consumer.",
   "files": {
-    "app.js": "67c63a0efaccdc93596bb8c6267d0a81fb5f51d1ea082f499711d823c32b2c88",
+    "app.js": "efb3f85a6d3c7863a44c9b0ecd90fa898519ac3817aca016d0206f09e1b550ab",
     "dev-reload.js": "80b29356e533a33e8f8ca247de99ed2adf594db40f0114219a959c5080cd51fe",
     "doug.png": "103edb15969ddbfb806c7cab541c418596e0e96ef667e0b5c3ad0dc17e2bbcb2",
     "fonts/.gitattributes": "c1859ddc3c9e9a98a52b125c0e84b072eace66e5f8139615688cf64193301e49",

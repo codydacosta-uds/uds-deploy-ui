@@ -365,9 +365,10 @@ function clusterConnectionState(snapshot){
   const later=reports.filter(r=>r.timestamp>wait.timestamp),explicit=later.find(r=>r.kind==='cluster.connected');
   if(explicit)return {state:'succeeded',label:'Cluster connected',evidence:'CLI explicitly reported that cluster connection completed'};
   if(['parallel','concurrent'].includes(snapshot.mode)||snapshot.packages?.filter(p=>p.status==='deploying').length>1)return {state:'unknown',label:'Cluster connection reported',evidence:'Concurrent activity cannot establish a single connection handoff'};
-  const nextPackage=later.filter(r=>r.kind==='package.start').reduce((a,b)=>Math.min(a,b.timestamp),Infinity),component=later.filter(r=>r.kind==='component.start'&&r.timestamp<nextPackage).sort((a,b)=>a.timestamp-b.timestamp)[0];
-  const errors=later.filter(r=>(r.kind==='deployment.error'||r.message==='action failed')&&r.timestamp<(component?.timestamp??nextPackage));
-  if(component&&!errors.length)return {state:'succeeded',label:'Cluster connected',evidence:'The same sequential CLI advanced from waiting for cluster connection into component deployment'};
+  const bootstrap=snapshot.source?.kind==='stock-process'&&snapshot.source.output_complete===true&&snapshot.source.single_cli===true&&snapshot.source.activity_available!==false;
+  const nextPackage=later.filter(r=>r.kind==='package.start').reduce((a,b)=>Math.min(a,b.timestamp),Infinity),handoff=later.filter(r=>(r.kind==='component.start'||bootstrap&&r.kind==='cluster.bootstrap')&&r.timestamp<nextPackage).sort((a,b)=>a.timestamp-b.timestamp)[0];
+  const errors=later.filter(r=>(r.kind==='deployment.error'||r.message==='action failed')&&r.timestamp<(handoff?.timestamp??nextPackage));
+  if(handoff&&!errors.length)return {state:'succeeded',label:'Cluster connected',evidence:handoff.kind==='cluster.bootstrap'?'The same complete sequential CLI advanced past its connection wait into Zarf injector cluster operations without a reported error':'The same sequential CLI advanced from waiting for cluster connection into component deployment'};
   if(errors.some(r=>/unable to connect to (?:the Kubernetes )?cluster/.test(r.error||'')))return {state:'failed',label:'Cluster connection error',evidence:'The CLI reported a cluster connection error'};
   if(errors.length||snapshot.completed_at||!['waiting','deploying'].includes(snapshot.status)||snapshot.source?.output_complete===false||snapshot.source?.activity_available===false||nextPackage!==Infinity)return {state:'unknown',label:'Connection unconfirmed',evidence:'No connection-complete report or error-free component handoff was captured'};
   return {state:'running',label:'Connecting to cluster',evidence:'CLI reported waiting for cluster connection; no handoff observed yet'};

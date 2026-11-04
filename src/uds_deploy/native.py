@@ -173,6 +173,9 @@ MESSAGES={
  'deploying component':('component.start','Deploy component'),
  'waiting for cluster connection':('cluster.connect','Connect to cluster'),
  'done waiting for cluster, connected':('cluster.connected','Cluster connection reported ready'),
+ # These SDK operations run after the connection wait returns; they are not success callbacks.
+ 'creating Zarf injector resources':('cluster.bootstrap','Creating Zarf injector resources'),
+ 'adding archived binary configmaps of registry image to the cluster':('cluster.bootstrap','Loading registry image configmaps'),
  'running command':('actions.command','Run action'),
  'action succeeded':('actions.command','Action reported success'),
  'action failed':('actions.command','Action reported failure'),
