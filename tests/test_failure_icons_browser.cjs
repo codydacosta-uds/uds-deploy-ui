@@ -14,6 +14,8 @@ const evidence=fs.mkdtempSync(path.join(os.tmpdir(),'uds-failure-icons-'));
    '<div class="component-progress-step"><span data-icon="component" class="step-status-icon failed" aria-hidden="true">×</span> Component</div>'+
    '<div class="history-status failed"><span data-icon="table" class="status-icon failed" aria-hidden="true">×</span> Failed</div>'+
    '<div><span data-icon="cancelled" class="status-icon cancelled" aria-hidden="true">×</span> Cancelled</div>'+
+   '<span class="history-status unknown"><span class="status-icon unknown" aria-hidden="true">?</span>Unconfirmed</span>'+
+   '<strong class="run-status failed">Failed</strong>'+
    '</div></main></body>');
   for(const theme of ['light','dark']){
    await page.locator('html').evaluate((element,value)=>element.dataset.theme=value,theme);
@@ -36,9 +38,22 @@ const evidence=fs.mkdtempSync(path.join(os.tmpdir(),'uds-failure-icons-'));
     }
     assert.ok(icon.bars[0].rotation>0&&icon.bars[1].rotation<0,'Both diagonal strokes form the X');
    }
+   const palette=await page.evaluate(()=>{
+    const colors=selector=>{const style=getComputedStyle(document.querySelector(selector));return {text:style.color,background:style.backgroundColor,border:style.borderColor};};
+    return {failed:colors('.history-status.failed'),icon:colors('.status-icon.failed'),run:colors('.run-status.failed'),unknown:colors('.history-status.unknown'),question:colors('.status-icon.unknown'),step:colors('.step-status-icon.failed')};
+   });
+   const luminance=color=>color.match(/[\d.]+/g).slice(0,3).map(Number).map(value=>{value/=255;return value<=.04045?value/12.92:((value+.055)/1.055)**2.4;}).reduce((sum,value,index)=>sum+value*[.2126,.7152,.0722][index],0);
+   const contrast=(a,b)=>{const x=luminance(a),y=luminance(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05);};
+   assert.ok(contrast(palette.failed.text,palette.failed.background)>=4.5,'Readable '+theme+' failure badge');
+   assert.ok(contrast(palette.unknown.text,palette.unknown.background)>=4.5,'Readable '+theme+' unconfirmed badge');
+   if(theme==='light'){
+    assert.equal(palette.failed.text,'rgb(198, 40, 40)');assert.equal(palette.failed.background,'rgb(255, 235, 238)');
+    assert.equal(palette.icon.background,palette.failed.text);assert.equal(palette.step.background,palette.failed.text);assert.equal(palette.run.background,palette.failed.text,'Failure circles, headers and badges share the red token');
+    assert.equal(palette.unknown.background,'rgb(237, 237, 237)');assert.equal(palette.unknown.text,'rgb(85, 85, 85)');assert.equal(palette.question.text,palette.unknown.text);assert.equal(palette.question.border,'rgb(115, 115, 115)','No amber or purple leaks into Unconfirmed');
+   }
    await page.locator('#fixture').screenshot({path:path.join(evidence,theme+'.png')});
   }
   assert.deepEqual(errors,[]);
-  console.log('Failure icons passed: centered crosses at activity, component and table sizes in both themes. Evidence: '+evidence);
+  console.log('Failure icons/palette passed: centered crosses, shared light-mode red, neutral Unconfirmed gray and readable badge contrast in both themes. Evidence: '+evidence);
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

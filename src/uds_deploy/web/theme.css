@@ -1,4 +1,9 @@
 /* Shared Apache-2.0 deployment viewer UI; source/asset notices accompany each distribution. */
+html[data-theme=light] body[data-mode=live] { --status-failed: #c62828; --red: #c62828; }
+html[data-theme=light] body[data-mode=live] .history-status.failed { background: #ffebee; color: var(--status-failed); }
+html[data-theme=light] body[data-mode=live] .status-icon.failed { background: var(--status-failed); border-color: var(--status-failed); color: #fff; }
+html[data-theme=light] body[data-mode=live] :is(.history-status.unknown,.run-status.unknown) { background: #ededed; color: #555; }
+html[data-theme=light] body[data-mode=live] .status-icon.unknown { background: transparent; border-color: #737373; color: #555; }
 #matrix-view { min-width: 0; }
 #matrix-navigation .matrix-run-status { margin-left: 12px; font-size: 10px; }
 .matrix-child-context { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 12px 0 4px; }
@@ -112,7 +117,7 @@ body[data-mode=live] .component-progress-name { white-space: nowrap; overflow: h
 .component-overview-state { justify-self: start; padding: 1px 7px; border-radius: 999px; color: var(--theme-muted,#626b76); font-size: 10px; white-space: nowrap; }
 .component-overview-state.succeeded { color: #166534; background: #e2f2e9; }
 .component-overview-state.running { color: #1f5fa9; background: #e8f1fe; }
-.component-overview-state.failed { color: #a32617; background: #fce8e6; }
+.component-overview-state.failed { color: var(--status-failed,#c62828); background: #ffebee; }
 html[data-theme=dark] .component-overview-state.succeeded { color: #85ddb0; background: #243b2e; }
 html[data-theme=dark] .component-overview-state.running { color: #9ecbff; background: #22364e; }
 html[data-theme=dark] .component-overview-state.failed { color: #ffb4a8; background: #432c2d; }
@@ -166,7 +171,7 @@ body[data-mode=live] .overview-metrics { grid-column: 2; grid-row: 1 / span 3; d
 .cluster-connection { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; min-height: 24px; padding: 1px 8px; border: 1px solid #d8dcdf; border-radius: 999px; color: #626b76; font-size: 11px; white-space: nowrap; }
 .cluster-connection.running { color: #1f5fa9; }
 .cluster-connection.succeeded { color: #166534; }
-.cluster-connection.failed { color: #a32617; }
+.cluster-connection.failed { color: var(--status-failed,#c62828); }
 html[data-theme=dark] .cluster-connection { color: var(--theme-muted); border-color: var(--theme-border); }
 html[data-theme=dark] .cluster-connection.running { color: var(--theme-link); }
 html[data-theme=dark] .cluster-connection.succeeded { color: var(--green); }
@@ -220,12 +225,12 @@ body[data-mode=live] .execution-rail .stock-job { flex: 1 0 260px; min-width: 26
 body[data-mode=live] .execution-rail .stock-job .stock-job-state { display: inline-flex; align-items: center; min-height: 18px; padding: 0 7px; border-radius: 999px; background: #eceef1; color: #555e69; white-space: nowrap; }
 body[data-mode=live] .execution-rail .stock-job.succeeded .stock-job-state { background: #e2f2e9; color: #166534; }
 body[data-mode=live] .execution-rail .stock-job.running .stock-job-state { background: #e8f1fe; color: #1f5fa9; }
-body[data-mode=live] .execution-rail .stock-job.failed .stock-job-state { background: #fce8e6; color: #a32617; }
+body[data-mode=live] .execution-rail .stock-job.failed .stock-job-state { background: #ffebee; color: var(--status-failed); }
 .activity-result { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; }
 .activity-result .step-status-icon { flex-basis: 16px; width: 16px; height: 16px; font-size: 10px; }
 .activity-result.succeeded { color: #108548; }
 .activity-result.running { color: #1f75cb; }
-.activity-result.failed { color: #dd2b0e; }
+.activity-result.failed { color: var(--status-failed,#c62828); }
 @media (max-width: 950px) { body[data-mode=live] .summary { grid-template-columns: minmax(0,1fr); }body[data-mode=live] .overview-metrics { grid-column: 1; grid-row: auto; border-left: 0; border-top: 1px solid #d8dcdf; margin: 6px 18px; padding: 12px 0 3px; } }
 @media (max-width: 600px) { .packages-toolbar { align-items: flex-start; flex-wrap: wrap; }.package-step-summary { white-space: normal; }body[data-mode=live] .deployment-status-heading .session-view-actions { margin-left: auto; } }
 body[data-mode=live] .deployment-confirmed-total { color: #108548; }
@@ -240,7 +245,7 @@ body[data-mode=live] .component-activity > details:is(.execution-details,.compon
 .step-detail-result { padding: 2px 8px; border-radius: 999px; color: #555e69; background: #eceef1; font-size: 10px; font-weight: 600; white-space: nowrap; }
 .step-detail-result.succeeded { color: #166534; background: #e2f2e9; }
 .step-detail-result.running { color: #1f5fa9; background: #e8f1fe; }
-.step-detail-result.failed { color: #a32617; background: #fce8e6; }
+.step-detail-result.failed { color: var(--status-failed,#c62828); background: #ffebee; }
 .step-detail-facts { display: grid; grid-template-columns: max-content minmax(0,1fr); gap: 8px 16px; margin: 0; padding: 0 12px 12px; font-size: 11px; }
 .step-detail-facts dt { color: #626b76; }.step-detail-facts dd { margin: 0; overflow-wrap: anywhere; }
 .step-detail-actions { display: flex; padding: 0 12px 10px; }
