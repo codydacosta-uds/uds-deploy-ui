@@ -117,7 +117,7 @@ html[data-theme=dark] .hierarchy-pill[data-kind=bundle] { background: #59421d; c
 html[data-theme=dark] .component-identity { color: var(--theme-text); }
 body[data-mode=live] .summary h1 { font-size: 25px; }
 body[data-mode=live] .target { grid-column: 1; margin: 3px 16px; }
-body[data-mode=live] .run-meta { grid-column: 1; padding: 2px 16px 6px; }
+body[data-mode=live] .run-meta { grid-column: 1; padding: 8px 16px 10px; column-gap: 24px; }
 .overview-metrics { display: none; }
 body[data-mode=live] .overview-metrics { grid-column: 2; grid-row: 1 / span 3; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); align-items: center; gap: 12px; margin: 8px 16px 8px 0; padding: 0 16px; border-left: 1px solid #d8dcdf; }
 .cluster-connection { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; min-height: 24px; padding: 1px 8px; border: 1px solid #d8dcdf; border-radius: 999px; color: #626b76; font-size: 11px; white-space: nowrap; }
