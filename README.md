@@ -95,9 +95,11 @@ reliably show every step.
 
 ### Grouped concurrent runs
 
-An integrated runner appears as **one Current tasks entry** with expandable layer
-cards, parallel jobs and declared dependency connections. Select a captured job
-to open its existing components and logs **below the matrix, on the same page**.
+An integrated runner appears as **one Current tasks entry**. Its expandable layer
+matrix replaces the linear cards **inside Package navigation**, with parallel
+jobs and declared dependency connections. There is no separate matrix above the
+deployment summary. Select a captured job to open its existing components and
+logs **below Package navigation, on the same page**.
 Each job shows its status, start time and elapsed time.
 
 Normal `uds deploy` keeps the existing view. Grouping is explicit: using the same

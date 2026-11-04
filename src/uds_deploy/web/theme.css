@@ -1,13 +1,10 @@
 /* Shared Apache-2.0 deployment viewer UI; source/asset notices accompany each distribution. */
-#deployment-detail:not([hidden]) { display: contents; }
 #matrix-view { min-width: 0; }
-.matrix-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
-.matrix-header h1 { margin: 0; font-size: 24px; }
-.matrix-header .summary-title { padding: 0; background: transparent; }
-.matrix-header > button { background: var(--theme-panel,#fff); border-color: var(--theme-border,#cbd2da); color: var(--theme-text,#34495e); }
+#matrix-navigation .matrix-run-status { margin-left: 12px; font-size: 10px; }
 .matrix-job[aria-pressed=true] { box-shadow: 0 0 0 1px var(--status-running); }
-.matrix-meta { display: flex; gap: 24px; margin: 10px 0; color: var(--theme-muted,#626b76); font-size: 12px; }
-.matrix-note { margin: 4px 0 20px; color: var(--theme-muted,#626b76); font-size: 12px; }
+.matrix-surface.matrix-list { display: grid; min-width: 0; gap: 16px; }
+.matrix-list .matrix-layer { width: 100%; }
+.matrix-list .matrix-wires { display: none; }
 .matrix-scroll { overflow-x: auto; padding-bottom: 14px; }
 .matrix-surface { position: relative; display: flex; align-items: flex-start; gap: 64px; min-width: max-content; padding: 8px 28px 20px 0; }
 .matrix-wires { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }

@@ -7,13 +7,15 @@ const manifest=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
  page.on('pageerror',error=>errors.push(error.message));page.on('request',request=>{if(!['GET','HEAD'].includes(request.method()))writes.push(request.method());if(new URL(request.url()).origin!==new URL(manifest.url).origin)external.push(request.url());});
  await page.goto(manifest.url);
  const link=page.locator('.deployment-link').filter({hasText:'Concurrent SDK fixture'});await link.waitFor();await link.click();
- await page.locator('#matrix-view').waitFor({state:'visible'});assert.equal(await page.locator('#deployment-detail').isVisible(),false);
+ await page.locator('#packages #matrix-navigation #matrix-view').waitFor({state:'visible'});assert.equal(await page.locator('.package-execution').count(),0);
+ assert.equal(await page.getByRole('heading',{name:'Package navigation',exact:true}).count(),1);assert.equal(await page.locator('#workspace > #matrix-view').count(),0);
  const parentId=await page.evaluate(()=>state.id);assert.ok(parentId.startsWith('matrix-'));
  const job=name=>page.locator('[data-matrix-job="'+name+'"]');
  await job('prepare').waitFor();await page.waitForFunction(()=>!document.querySelector('[data-matrix-job="prepare"]').disabled);
  assert.equal(await page.locator('.matrix-layer').count(),3);assert.equal(await page.locator('.matrix-job').count(),4);
  assert.equal(await job('verify').getAttribute('data-job-status'),'waiting');assert.match(await job('verify').innerText(),/Not started/);
- await job('prepare').click();await page.locator('#deployment-detail').waitFor({state:'visible'});
+ await job('prepare').click();await page.locator('.package-execution').first().waitFor({state:'visible'});
+ assert.equal(await page.locator('#packages #matrix-navigation #matrix-view').isVisible(),true,'The matrix belongs inside the existing Package navigation panel');
  assert.equal(await page.locator('#matrix-view').isVisible(),true);assert.equal(new URL(page.url()).searchParams.get('deployment'),parentId);
  await page.waitForFunction(()=>document.querySelector('#packages').textContent.includes('Matrix fixture prepare'));
  await page.getByRole('button',{name:'View all logs',exact:true}).click();await page.waitForFunction(()=>document.querySelector('#logs').textContent.includes('MATRIX prepare stdout'));
@@ -24,6 +26,8 @@ const manifest=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
  await job('work-a').click();await page.waitForFunction(()=>state?.packages?.[0]?.id==='work-a');
  await page.waitForFunction(()=>document.querySelector('#packages').textContent.includes('Matrix fixture work-a'));await page.getByRole('button',{name:'View all logs',exact:true}).click();await page.waitForFunction(()=>document.querySelector('#logs').textContent.includes('MATRIX work-a stdout'));
  assert.equal(await page.locator('#matrix-view .dependency-line').count(),4,'Draw only the declared fan-out and join');
+ await page.locator('#matrix-navigation').getByRole('button',{name:'List',exact:true}).click();await page.locator('.matrix-surface.matrix-list').waitFor();assert.equal(await page.locator('.matrix-wires').isVisible(),false);
+ await page.locator('#matrix-navigation').getByRole('button',{name:'Pipeline',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('.matrix-surface').classList.contains('matrix-list'));
  for(const theme of ['light','dark']){
   const toggle=page.locator('#theme-toggle');if((await toggle.getAttribute('aria-pressed')==='true')!==(theme==='dark'))await toggle.click();
   for(const width of [1280,1600]){await page.setViewportSize({width,height:1100});await page.evaluate(()=>document.fonts.ready);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await page.screenshot({path:path.join(manifest.evidence,manifest.mode+'-'+theme+'-'+width+'.png'),fullPage:true});}
@@ -44,7 +48,7 @@ const manifest=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   const detail=await page.request.get(new URL('api/deployments/'+child.child_run_id,manifest.url).href),snapshot=await detail.json();assert.equal(snapshot.source.output_complete,true);
   const logs=await page.request.get(new URL('api/deployments/'+child.child_run_id+'/logs?download=1',manifest.url).href);assert.ok((await logs.body()).includes(Buffer.from('MATRIX '+child.id+' stdout')));
  }
- await page.getByRole('button',{name:'Close child details',exact:true}).click();await page.waitForFunction(()=>!!state?.matrix);assert.equal(await page.locator('#deployment-detail').isVisible(),false);
+ await page.getByRole('button',{name:'Close child details',exact:true}).click();await page.waitForFunction(()=>!!state?.matrix);assert.equal(await page.locator('.package-execution').count(),0);
  await page.getByRole('button',{name:'← Current tasks',exact:true}).click();await page.waitForSelector('#deployments-page:visible');await page.evaluate(()=>discover());
  assert.equal(await page.locator('[data-run="'+parentId+'"]').count(),1);
  for(const child of finalGroup.matrix.jobs.filter(job=>job.child_run_id))assert.equal(await page.locator('[data-run="'+child.child_run_id+'"]').count(),0,'Validated children belong to one parent row');

@@ -455,8 +455,8 @@ function restoreComponentScroll(list){
 function renderStockPipeline(){
   $('graph-caption').hidden=true;
   const canvas=$('packages');canvas.classList.add('stock-pipeline');
-  const key=JSON.stringify([state.id,state.status,state.completed_at,state.mode,state.source,state.reports,state.checks,inspectorOpen,document.body.dataset.outputFocus,state.artifact_info,state.packages,packageLayout,pipelineSelection,state.packages.map(p=>componentChoices.get(state.id+'/'+p.id)),[...stepChoices],quietFinished]);
-  if(canvas.dataset.stockKey===key)return;canvas.dataset.stockKey=key;
+  const key=JSON.stringify([state.id,matrixParent?.id,state.status,state.completed_at,state.mode,state.source,state.reports,state.checks,inspectorOpen,document.body.dataset.outputFocus,state.artifact_info,state.packages,packageLayout,pipelineSelection,state.packages.map(p=>componentChoices.get(state.id+'/'+p.id)),[...stepChoices],quietFinished]);
+  if(canvas.dataset.stockKey===key){if(matrixParent)renderMatrix(matrixParent);return;}canvas.dataset.stockKey=key;canvas.dataset.matrixRunKey='';
   canvas.replaceChildren();
   const reports=inferSequentialCompletion(state,scopeImageReports(state.reports||[])),errors=reports.filter(r=>r.message==='action failed'||r.kind==='deployment.error'),latest=reports.reduce((last,item)=>!last||item.timestamp>last.timestamp?item:last,null);
   function openOutput(focus,context,activity=null){
@@ -579,7 +579,8 @@ function renderStockPipeline(){
     heading.append(link);pane.append(heading,node('p',activity.detail,'current-cli-report'));pane.title='SDK-reported activity; inferred completion remains explicitly identified in the evidence.';lanes.append(pane);
   }
   if(lanes.childElementCount)canvas.append(lanes);
-  canvas.append(banner);
+  canvas.append(matrixParent?matrixNavigation(matrixParent,actions):banner);
+  if(matrixParent)renderMatrix(matrixParent);
   if(errors.length){
     const lastError=errors.reduce((a,b)=>b.timestamp>a.timestamp?b:a),warning=node('div',undefined,'cli-error-summary');warning.setAttribute('role','status');
     warning.append(node('strong','CLI reported an error'),node('p',lastError.error||'An action failure was reported. Open CLI output for the original error.'));canvas.append(warning);
@@ -725,17 +726,31 @@ function matrixAppearance(status){
 function matrixLayerStatus(jobs){
   return jobs.some(j=>j.status==='failed')?'failed':jobs.every(j=>j.status==='completed')?'completed':jobs.some(j=>j.status==='deploying')?'deploying':jobs.every(j=>j.status==='not-started')?'not-started':jobs.some(j=>['unknown','not-started'].includes(j.status))?'unknown':'waiting';
 }
+function matrixNavigation(group,actions=null){
+  const banner=node('section',undefined,'deployment-status-bar session-activity-heading');banner.id='matrix-navigation';banner.setAttribute('aria-label','Package navigation');
+  const header=node('div',undefined,'deployment-status-heading'),titleLine=node('div',undefined,'pipeline-title-line'),layouts=node('div',undefined,'pipeline-layout-toggle');titleLine.append(node('h2','Package navigation'));
+  for(const mode of ['pipeline','list']){const button=node('button',title(mode));button.type='button';button.setAttribute('aria-pressed',String(packageLayout===mode));button.onclick=()=>{packageLayout=mode;$('packages').dataset.stockKey='';$('packages').dataset.matrixRunKey='';render();};layouts.append(button);}titleLine.append(layouts,node('span',taskStatus(group).label,'matrix-run-status run-status '+taskStatus(group).status));const titleBlock=node('div',undefined,'pipeline-title');titleBlock.append(titleLine);header.append(titleBlock);
+  if(matrixParent){actions=actions||node('div',undefined,'session-view-actions');const close=node('button','Close child details','session-output-button');close.onclick=()=>chooseRun(group.id,false);actions.prepend(close);}
+  if(actions)header.append(actions);
+  const panel=node('div');panel.id='matrix-view';panel.setAttribute('aria-label','Concurrent deployment matrix');banner.append(header,panel);return banner;
+}
+function renderMatrixRun(group){
+  $('job-inspector').hidden=true;$('packages').hidden=false;$('jobs').hidden=true;
+  $('bundle').textContent=group.bundle_name;$('artifact-kind').textContent='Concurrent run';$('artifact-kind').dataset.kind='deployment';
+  const status=taskStatus(group);$('run-status').textContent=status.label;$('run-status').className='run-status '+status.status;$('run-status').title='Runner-reported results; no success is inferred from missing output';
+  $('target').replaceChildren(node('span',group.packages.length+' packages','package-badge'));$('started').textContent='Started '+new Date(group.started_at*1000).toLocaleString();$('elapsed').textContent=elapsed(group.started_at,group.completed_at);$('run-reference').textContent='';
+  const jobs=group.matrix.jobs,overview=$('overview-metrics');overview.replaceChildren();
+  for(const [value,label,kind] of [[group.packages.length,'Packages','packages'],[jobs.filter(j=>j.status==='completed').length,'Jobs completed','confirmed'],[jobs.filter(j=>j.status==='deploying').length,'Jobs active','active'],[jobs.filter(j=>!j.started_at).length,'Jobs not started','unknown']]){const metric=node('div',undefined,'overview-metric '+kind);metric.append(node('strong',String(value)),node('span',label));overview.append(metric);}overview.title='Runner-reported job results';
+  const canvas=$('packages'),key=JSON.stringify([group.id,packageLayout]);canvas.classList.add('stock-pipeline');
+  if(canvas.dataset.matrixRunKey!==key||!$('matrix-view')){canvas.replaceChildren(matrixNavigation(group));canvas.dataset.matrixRunKey=key;canvas.dataset.stockKey='';}
+  renderMatrix(group);updateActiveLink();
+}
 function renderMatrix(group){
-  const panel=$('matrix-view'),key=JSON.stringify([group,state.id]);
+  const panel=$('matrix-view'),status=taskStatus(group),badge=panel.parentElement.querySelector('.matrix-run-status');badge.textContent=status.label;badge.className='matrix-run-status run-status '+status.status;
+  const key=JSON.stringify([group,state.id,packageLayout]);
   if(panel.dataset.key===key){updateDurations();return;}panel.dataset.key=key;
   const scroll=panel.querySelector('.matrix-scroll')?.scrollLeft||0,focus=document.activeElement?.dataset.focusKey;
-  const header=node('div',undefined,'matrix-header'),heading=node('div'),line=node('div',undefined,'summary-title'),status=taskStatus(group);
-  line.append(node('h1',group.bundle_name),node('span','Concurrent run','hierarchy-pill'),node('strong',status.label,'run-status '+status.status));
-  const timing=node('p',undefined,'matrix-meta'),elapsed=node('span','Duration ');elapsed.append(durationNode({start:group.started_at,end:group.completed_at,running:!group.completed_at,evidence:'Runner-reported start/end time'}));timing.append(node('span','Started '+new Date(group.started_at*1000).toLocaleString()),elapsed);heading.append(line,timing);header.append(heading);
-  if(matrixParent){const close=node('button','Close child details');close.onclick=()=>chooseRun(group.id,false);header.append(close);}
-  const note=node('p','Select a job to see its components and logs below.','matrix-note');
-  note.title='Connections use declared runner dependencies. Job results use runner-reported exit codes; component details retain their own captured evidence.';
-  const viewport=node('div',undefined,'matrix-scroll'),surface=node('div',undefined,'matrix-surface'),svg=svgNode('svg');svg.classList.add('matrix-wires');svg.setAttribute('aria-hidden','true');surface.append(svg);
+  const viewport=node('div',undefined,'matrix-scroll'),surface=node('div',undefined,'matrix-surface'+(packageLayout==='list'?' matrix-list':'')),svg=svgNode('svg');svg.classList.add('matrix-wires');svg.setAttribute('aria-hidden','true');surface.append(svg);
   for(const layer of group.matrix.layers){
     const jobs=group.matrix.jobs.filter(job=>job.layer===layer.id),appearance=matrixAppearance(matrixLayerStatus(jobs));
     const details=node('details',undefined,'matrix-layer'),disclosureKey='matrix/'+group.id+'/'+layer.id;details.dataset.disclosure=disclosureKey;details.dataset.matrixLayer=layer.id;details.open=disclosure.has(disclosureKey)?disclosure.get(disclosureKey):true;
@@ -755,7 +770,7 @@ function renderMatrix(group){
     }
     details.append(children);details.ontoggle=()=>{disclosure.set(disclosureKey,details.open);scheduleWires();};surface.append(details);
   }
-  viewport.append(surface);panel.replaceChildren(header,note,viewport);viewport.scrollLeft=scroll;
+  viewport.append(surface);panel.replaceChildren(viewport);viewport.scrollLeft=scroll;
   if(focus)Array.from(panel.querySelectorAll('[data-focus-key]')).find(el=>el.dataset.focusKey===focus)?.focus({preventScroll:true});
   scheduleWires();updateDurations();
 }
@@ -803,10 +818,7 @@ function drawWires(){
 }
 function render(){
   if(!state)return;
-  const matrix=state.matrix?state:matrixParent;
-  $('matrix-view').hidden=!matrix;$('deployment-detail').hidden=!!state.matrix;
-  if(matrix)renderMatrix(matrix);
-  if(state.matrix){updateActiveLink();return;}
+  if(state.matrix){renderMatrixRun(state);return;}
   $('job-inspector').hidden=!inspectorOpen;
   const focus=document.activeElement?.dataset.focusKey;
   for(const el of document.querySelectorAll('details[data-disclosure]'))disclosure.set(el.dataset.disclosure,el.open);
