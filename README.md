@@ -99,8 +99,10 @@ An integrated runner appears as **one Current tasks entry**. Its expandable laye
 matrix replaces the linear cards **inside Package navigation**, with parallel
 jobs and declared dependency connections. There is no separate matrix above the
 deployment summary. Select a captured job to open its existing components and
-logs **below Package navigation, on the same page**.
-Each job shows its status, start time and elapsed time.
+logs **below Package navigation, on the same page**. The parent summary and
+package/job totals stay fixed to the whole run. Inactive layers start collapsed;
+manual expand/collapse choices are respected. Click the selected job again to
+close its details. Each job shows its status, start time and elapsed time.
 
 Normal `uds deploy` keeps the existing view. Grouping is explicit: using the same
 bundle never groups unrelated deployments. Job results come from the runner's

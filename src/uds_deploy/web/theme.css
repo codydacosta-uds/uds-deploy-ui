@@ -1,6 +1,9 @@
 /* Shared Apache-2.0 deployment viewer UI; source/asset notices accompany each distribution. */
 #matrix-view { min-width: 0; }
 #matrix-navigation .matrix-run-status { margin-left: 12px; font-size: 10px; }
+.matrix-child-context { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 12px 0 4px; }
+.matrix-child-context h2 { flex: 1; margin: 0; }
+.matrix-child-context .session-yaml { background: var(--theme-panel,#fff); border-color: var(--theme-border,#cbd2da); color: var(--theme-link,#1f5fa9); font-size: 11px; }
 .matrix-job[aria-pressed=true] { box-shadow: 0 0 0 1px var(--status-running); }
 .matrix-surface.matrix-list { display: grid; min-width: 0; gap: 16px; }
 .matrix-list .matrix-layer { width: 100%; }
