@@ -7,6 +7,10 @@ components, steps, original logs and packaged YAML while you deploy normally.
 retry, cancel or schedule deployments. No database, service installation, build
 step, or Python/JavaScript dependency installation is required.
 
+<img width="1866" height="980" alt="Screenshot 2026-11-04 at 4 41 03 PM" src="https://github.com/user-attachments/assets/446420dd-453a-4ee9-adac-a89fab8dc06a" />
+
+<img width="1871" height="953" alt="Screenshot 2026-11-04 at 4 42 11 PM" src="https://github.com/user-attachments/assets/93bd7520-8146-4075-8e4a-5fa6a3684aff" />
+
 ## Quick start
 
 You need **macOS or Linux**, **Bash or Zsh**, **Python 3.10+ available as `python3`**,
