@@ -1,7 +1,7 @@
 <!doctype html>
 <!-- Shared Apache-2.0 deployment viewer UI; source/asset notices accompany each distribution. -->
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>UDS Deploy</title><script src="theme.js"></script><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="theme.css"><script src="app.js" defer></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>UDS Deploy Portal</title><link rel="icon" type="image/png" href="doug.png"><script src="theme.js"></script><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="theme.css"><script src="app.js" defer></script></head>
 <body data-mode="live">
 <div class="app-shell">
 <aside class="sidebar" aria-label="Workspace navigation">
@@ -11,19 +11,20 @@
   <div class="sidebar-footer">Local viewer<br><span>UDS bundles · Zarf packages</span></div>
 </aside>
 <div class="page-shell">
-<header class="topbar"><a class="uds-brand" href="./" aria-label="UDS deployment watcher"><img class="uds-logo-on-light" src="uds-logo.png" alt="UDS — Unified Defense Stack" width="96" height="60"><img class="uds-logo-on-dark" hidden src="uds-logo-on-dark.png" alt="UDS — Unified Defense Stack" width="96" height="60"></a><div class="breadcrumbs"><button id="breadcrumb-home">Deployments</button><span id="breadcrumb-run" hidden></span></div><div id="connection" role="status">Connecting</div><button id="active-run" class="text-button" hidden>View active deployment</button><label id="history-switcher" class="history-label" hidden><select id="history" aria-label="Deployment history"><option>No deployments yet</option></select></label><button id="theme-toggle" class="theme-toggle" hidden type="button" aria-pressed="false" title="Switch to dark mode">Dark mode</button></header>
+<header class="topbar"><a class="uds-brand" href="./" aria-label="UDS deployment watcher"><img class="uds-logo-on-light" src="uds-logo.png" alt="UDS — Unified Defense Stack" width="96" height="60"><img class="uds-logo-on-dark" hidden src="uds-logo-on-dark.png" alt="UDS — Unified Defense Stack" width="96" height="60"><span class="uds-brand-title">Deploy</span></a><div class="breadcrumbs"><button id="breadcrumb-home">Deployments</button><span id="breadcrumb-run" hidden></span></div><div id="connection" role="status">Connecting</div><button id="active-run" class="text-button" hidden>View active deployment</button><label id="history-switcher" class="history-label" hidden><select id="history" aria-label="Deployment history"><option>No deployments yet</option></select></label><button id="theme-toggle" class="theme-toggle" hidden type="button" aria-pressed="false" title="Switch to dark mode">Dark mode</button></header>
 <main>
 <div id="notice" class="notice" role="alert" hidden></div>
 <section id="deployments-page" aria-label="Deployment history">
   <div class="page-title"><h1 id="history-title">Deployments</h1><span id="deployment-total" class="count-label"></span></div>
   <p id="history-description" class="page-description">Tracked UDS bundle deployments on this machine.</p><div id="processes" class="processes" aria-label="Detected local deployment processes"></div>
   <div class="history-filters"><input id="deployment-search" type="search" aria-label="Filter deployments" placeholder="Filter by bundle, target, or run ID"><select id="deployment-status" aria-label="Filter deployment status"><option value="">All statuses</option><option value="active">Running / waiting</option><option value="completed">Completed</option><option value="failed">Failed</option><option value="unknown">Unknown / interrupted</option></select></div>
-  <div id="deployment-table-scroll" class="table-scroll" hidden><table class="deployment-table"><thead><tr><th>Status</th><th>Deployment</th><th>Target</th><th>Packages</th><th>Duration</th><th class="actions-column">Actions</th></tr></thead><tbody id="deployment-rows"></tbody></table></div>
+  <div id="deployment-table-scroll" class="table-scroll" hidden><table class="deployment-table"><thead><tr><th>Status</th><th>Deployment</th><th class="task-target">Target</th><th>Packages</th><th>Duration</th><th class="actions-column">Actions</th></tr></thead><tbody id="deployment-rows"></tbody></table></div>
   <div id="history-empty" class="empty" hidden><h2>No deployments yet</h2><p>Start a tracked deployment from the terminal. Opening this viewer does not start one.</p><code>uds deploy path/to/uds-bundle.tar.zst --confirm</code></div>
   <p id="history-note" class="table-note">Latest 50 saved runs. Deployment starts stay in the terminal.</p>
 </section>
 <div id="empty" class="empty" hidden><h2>Loading deployment…</h2></div>
 <section id="workspace" class="workspace" hidden>
+  <button id="current-tasks" class="current-tasks-link" type="button">← Current tasks</button>
   <section class="pipeline-overview">
     <div class="summary"><div class="summary-title"><h1 id="bundle"></h1><span id="artifact-kind" class="hierarchy-pill">Deployment</span><strong id="run-status" class="run-status">—</strong></div><p id="target" class="target"></p><div class="run-meta"><span id="started"></span><span>Duration <strong id="elapsed">—</strong></span><span id="run-reference"></span></div><div id="overview-metrics" class="overview-metrics" aria-label="Deployment totals"></div><div class="completion"><span><strong id="count">—</strong> packages completed</span><div id="status-counts" class="status-counts"></div></div><details class="run-info"><summary>Run details</summary><span id="run-id"></span><span id="full-target"></span></details></div>
     <div class="pipeline-heading"><div class="graph-tabs" role="tablist" aria-label="Deployment view"><button id="pipeline-tab" role="tab" aria-selected="true" aria-controls="packages" class="active">Pipeline</button><button id="jobs-tab" role="tab" aria-selected="false" aria-controls="jobs" tabindex="-1">Jobs <span id="jobs-total"></span></button></div></div>
@@ -45,5 +46,11 @@
   <p id="definition-note" class="definition-note">Packaged definition, including values and commands. External configuration and CLI overrides are not applied.</p>
   <p id="definition-reference" class="definition-reference" hidden></p>
   <pre id="definition-content" tabindex="0" aria-label="Packaged YAML"></pre>
+</dialog>
+<dialog id="not-selected-dialog" aria-labelledby="not-selected-title" aria-describedby="not-selected-meaning">
+  <form method="dialog" class="definition-heading"><h2 id="not-selected-title"><span class="step-status-icon not-selected" aria-hidden="true">!</span>Not selected</h2><button aria-label="Close explanation" autofocus>×</button></form>
+  <div id="not-selected-meaning" class="not-selected-explanation">
+    <p>Optional component not enabled for this deployment. Not a failure and doesn't block completion.</p>
+  </div>
 </dialog>
 </body></html>

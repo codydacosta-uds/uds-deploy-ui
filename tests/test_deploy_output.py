@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'src'))
-from uds_deploy.output import active_capture, output_home
+from uds_deploy.output import active_capture, capture_homes, output_home
 from uds_deploy.native import open_files
 
 RAW=b'stdout exact CRLF\r\n\xff\x00stderr exact CRLF\r\n'
@@ -31,7 +31,7 @@ class OutputTests(unittest.TestCase):
             try:proc.communicate(timeout=3)
             except subprocess.TimeoutExpired:
                 os.killpg(proc.pid,signal.SIGKILL);proc.communicate()
-    def start(self,code=0,helper=None,shell='/bin/bash',default_home=False,legacy=False):
+    def start(self,code=0,helper=None,shell='/bin/bash',default_home=False):
         work=self.root/('job-'+str(len(self.jobs)));work.mkdir()
         fixture=work/'fixture-command'
         fixture.write_text('''#!{python}
@@ -49,8 +49,6 @@ sys.exit(int(sys.argv[1]))
         env=dict(os.environ,UDS_DEPLOY_RUNTIME_DIR=str(self.runtime),OUTPUT_TEST_SENTINEL='unchanged-value')
         if default_home:
             env.pop('UDS_DEPLOY_RUNTIME_DIR',None);(work/'tmp').mkdir();env['TMPDIR']=str(work/'tmp')
-        if legacy:
-            env['OUTPUT_TEST_CAPTURE_HOME']=str(work/'tmp'/('uds-watch-output-'+str(os.getuid())))
         # This is the exact shell pattern used by the normal task. The helper
         # consumes stdin only; it never launches or owns the fixture command.
         status='${pipestatus[1]}' if Path(shell).name=='zsh' else '${PIPESTATUS[0]}'
@@ -71,28 +69,30 @@ sys.exit(int(sys.argv[1]))
                 if found and not found.get('pending'):return found
                 time.sleep(.02)
         self.fail('Reader could not discover the live output-only tee')
-    def test_shared_default_namespace(self):
+    def test_generic_default_namespace(self):
         with patch.dict(os.environ,{'UDS_DEPLOY_RUNTIME_DIR':''}),patch('uds_deploy.output.tempfile.gettempdir',return_value=str(self.root)):
-            self.assertEqual(output_home(),self.root/('sonic-deploy-output-'+str(os.getuid())))
+            current=self.root/('uds-watch-output-'+str(os.getuid()))
+            self.assertEqual(output_home(),current)
+            self.assertEqual(capture_homes(),[current])
 
-    def test_sonic_and_legacy_helpers_default_namespace(self):
-        # Isolated compatibility fixtures use real OS pipes; no SDK/deployment.
-        for legacy in (False,True):
-            helper=self.root/('legacy/uds_deploy/capture.py' if legacy else 'sonic/scripts/deploy-output.py')
+    def test_explicit_helpers_default_namespace(self):
+        # Isolated fixtures use real OS pipes; no SDK/deployment.
+        for name in ('task/scripts/deploy-output.py','standalone/uds_deploy/capture.py'):
+            helper=self.root/name
             helper.parent.mkdir(parents=True,exist_ok=True)
-            helper.write_text('import os,signal,sys\nfrom pathlib import Path\nsys.path.insert(0,'+repr(str(ROOT/'src'))+')\nfrom uds_deploy import output\nif os.environ.get("OUTPUT_TEST_CAPTURE_HOME"):output.output_home=lambda:Path(os.environ["OUTPUT_TEST_CAPTURE_HOME"])\nsignal.signal(signal.SIGINT,signal.SIG_IGN)\nsignal.signal(signal.SIGTERM,signal.SIG_IGN)\nraise SystemExit(output.copy_output(sys.stdin.buffer,sys.stdout.buffer))\n')
+            helper.write_text('import signal,sys\nsys.path.insert(0,'+repr(str(ROOT/'src'))+')\nfrom uds_deploy import output\nsignal.signal(signal.SIGINT,signal.SIG_IGN)\nsignal.signal(signal.SIGTERM,signal.SIG_IGN)\nraise SystemExit(output.copy_output(sys.stdin.buffer,sys.stdout.buffer))\n')
             for shell in ('bash','zsh'):
                 binary=shutil.which(shell)
                 if not binary:continue
-                with self.subTest(legacy=legacy,shell=shell):
-                    proc,work,identity=self.start(7,helper,binary,default_home=True,legacy=legacy)
+                with self.subTest(helper=name,shell=shell):
+                    proc,work,identity=self.start(7,helper,binary,default_home=True)
                     deadline=time.monotonic()+5;capture=None
                     with patch.dict(os.environ,{'UDS_DEPLOY_RUNTIME_DIR':''}),patch('uds_deploy.output.tempfile.gettempdir',return_value=str(work/'tmp')):
                         while time.monotonic()<deadline:
                             capture=active_capture(identity['pid'],open_files)
                             if capture and not capture.get('pending'):break
                             time.sleep(.02)
-                    self.assertTrue(capture and not capture.get('pending'),'Shared and legacy namespace must both be discoverable')
+                    self.assertTrue(capture and not capture.get('pending'),'The configured capture namespace must be discoverable')
                     held=capture['path'].open('rb')
                     try:
                         (work/'release').touch();out,_=proc.communicate(timeout=5)

@@ -13,14 +13,12 @@ import tempfile
 
 def output_home():
     override=os.environ.get('UDS_DEPLOY_RUNTIME_DIR')
-    return Path(override)/'output' if override else Path(tempfile.gettempdir())/('sonic-deploy-output-'+str(os.getuid()))
+    return Path(override)/'output' if override else Path(tempfile.gettempdir())/('uds-watch-output-'+str(os.getuid()))
 
 
 def capture_homes():
-    """Read known capture namespaces without changing where this helper writes."""
-    home=output_home()
-    if os.environ.get('UDS_DEPLOY_RUNTIME_DIR'):return [home]
-    return [home,Path(tempfile.gettempdir())/('uds-watch-output-'+str(os.getuid()))]
+    """Read only this viewer's configured capture namespace."""
+    return [output_home()]
 
 
 def capture_helper(args):

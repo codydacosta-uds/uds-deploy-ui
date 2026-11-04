@@ -190,6 +190,15 @@ MESSAGES={
 ANSI=re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]')
 
 
+def report_time(value):
+    """SDK log clock only; ingestion timestamps still control report ordering."""
+    if not isinstance(value,str) or not re.fullmatch(r'\d{4}-\d\d-\d\d[T ]\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)?',value):return None
+    try:
+        stamp=datetime.datetime.fromisoformat(value.replace('Z','+00:00')).timestamp()
+        return stamp if stamp>0 else None
+    except (ValueError,OverflowError,OSError):return None
+
+
 def report(raw):
     """Normalize source-specific diagnostic reports, never successful phases."""
     # UDS task spinners redraw with CR, then print the child's actual line.
@@ -212,11 +221,12 @@ def report(raw):
     try:
         item=json.loads(text)
         if not isinstance(item,dict):return None
-        message=item.get('msg');fields=item
+        message=item.get('msg');fields=item;source_time=report_time(item.get('time'))
     except ValueError:
         # v0.40 legacy console logger: ISO local date/time, level, SDK message.
         tokens=text.split(None,3)
         if len(tokens)!=4 or not re.fullmatch(r'\d{4}-\d\d-\d\d',tokens[0]) or not re.fullmatch(r'\d\d:\d\d:\d\d',tokens[1]) or tokens[2] not in ('INF','ERR','WRN','DBG'):return None
+        source_time=report_time(tokens[0]+'T'+tokens[1])
         remainder=tokens[3];message=None;fields={}
         for known in sorted(MESSAGES,key=len,reverse=True):
             if remainder==known or remainder.startswith(known+' '):
@@ -250,6 +260,7 @@ def report(raw):
     # Body fields are diagnostic claims, never authoritative execution identity.
     resource=fields.get('package') if kind=='package.start' else fields.get('name') if kind=='component.start' else fields.get('chart') or (fields.get('name') if kind.startswith(('images.','helm.')) else None)
     result=dict(kind=kind,label=label,message=message,resource=resource,action_id=hashlib.sha256(str(fields.get('cmd','')).encode()).hexdigest()[:12] if kind=='actions.command' else None,error=fields.get('err')[:4096] if isinstance(fields.get('err'),str) else None,evidence='cli-report',status='reported')
+    if source_time is not None:result['source_timestamp']=source_time
     percent=fields.get('complete')
     if message=='image push in progress' and resource and isinstance(percent,str) and re.fullmatch(r'\d+(?:\.\d+)?%',percent):
         value=float(percent[:-1])
@@ -341,6 +352,19 @@ def record_report(state,item,owners=None):
     lookup='helm' if kind.startswith('helm.') or kind=='health.wait' else 'images' if kind.startswith('images.') else 'actions' if kind=='actions.command' else kind
     matches=(owners or {}).get((lookup,item.get('action_id') or resource),[])
     if len(matches)==1 and (not item.get('reported_component') or matches[0].get('component')==item['reported_component']):item['definition_owner']=dict(matches[0])
+    if not item.get('definition_owner') and (lookup=='helm' or lookup=='images' and resource) and len(matches)>1:
+        # Stock UDS/Zarf deploys components sequentially. Reused chart/image
+        # names need the explicit component boundary, not a global name guess.
+        # Aggregate image completion still requires observed pushes below.
+        source=state.get('source',{})
+        sequential=source.get('kind')=='stock-process' and source.get('output_complete') is True and source.get('activity_available') is not False and source.get('single_cli') is not False and state.get('mode') not in ('parallel','concurrent') and sum(p.get('status')=='deploying' for p in state.get('packages',[]))<=1
+        starts=[r for r in reports if r['kind'] in ('package.start','component.start')]
+        boundary=max(starts,key=lambda r:r['timestamp']) if starts else None
+        scope=boundary.get('definition_owner') if boundary and boundary['kind']=='component.start' else None
+        if sequential and scope in matches and (not item.get('reported_component') or item['reported_component']==scope.get('component')):
+            item['definition_owner']=dict(scope)
+            item['scope_evidence']='explicit-sequential-cli-component-start'
+            if boundary.get('log_id') is not None:item['scope_log_id']=boundary['log_id']
     if not item.get('definition_owner') and kind=='images.push' and item['message']=='done pushing images':
         # The stock SDK completion is component-wide and has no image name.
         # Scope it only with an explicit, uniquely owned component-start report
@@ -356,18 +380,52 @@ def record_report(state,item,owners=None):
     key='/'.join([owner.get('package',''),owner.get('component') or '',kind,str(item.get('declaration_id') or item.get('action_id') or resource)])
     item['id']=key
     previous=next((r for r in reports if r['id']==key),None)
+    if isinstance(item.get('source_timestamp'),(int,float)):
+        if not previous:item['first_source_timestamp']=item['source_timestamp']
+        elif previous.get('first_source_timestamp') is not None:item['first_source_timestamp']=previous['first_source_timestamp']
+        else:item['timing_uncertain']=True
+    if previous and isinstance(item.get('log_id'),int) and item['log_id']!=previous.get('log_id') and (kind in ('package.start','component.start','helm.prepare','helm.install','helm.upgrade') or kind=='actions.command' and item['message']=='running command'):
+        item['timing_uncertain']=True
     if previous and isinstance(previous.get('first_log_id'),int):item['first_log_id']=previous['first_log_id']
     elif isinstance(item.get('log_id'),int):item.setdefault('first_log_id',item['log_id'])
     if previous:
+        if 'source_timestamp' not in item:previous.pop('source_timestamp',None)
         if kind.startswith('images.') and 'image_percent' not in item:previous.pop('image_percent',None)
         previous.update(item);item=previous
     else:
         if len(reports)>=2048:reports.pop(0)
         reports.append(item)
+    if owner.get('component'):
+        for package in state.get('packages',[]):
+            if package.get('id')!=owner.get('package'):continue
+            for attempt in package.get('attempts',[]):
+                for component in (attempt.get('execution') or {}).get('components',[]):
+                    if component['id']==owner.get('component') and component.get('selection')=='not-selected':
+                        component.update(expected=True,selection='observed',selection_evidence='CLI reported activity for this component')
     if owner:
         seen=state.setdefault('reported_definitions',[])
         if owner not in seen:seen.append(owner)
     return item
+
+
+def unselected_components(bundle,item,package):
+    """Known optional omissions from packaged UDS selection, not runtime success.
+
+    UDS v0.40 uses Zarf's non-interactive filter: required/default components
+    plus optionalComponents. Unknown schemas/selectors/groups remain expected.
+    Actual CLI activity overrides this definition-only projection.
+    """
+    if bundle.get('kind')!='UDSBundle':return set()
+    requested=item.get('optionalComponents',[])
+    if not isinstance(requested,list) or any(not isinstance(name,str) or not re.fullmatch(r'[a-z0-9][a-z0-9._-]*',name) for name in requested):return set()
+    version=package.get('apiVersion')
+    if version not in (None,'zarf.dev/v1alpha1','zarf.dev/v1beta1'):return set()
+    beta=version=='zarf.dev/v1beta1'
+    excluded=set()
+    for component in package.get('components',[]):
+        optional=component.get('optional') is True if beta else component.get('required') is not True
+        if optional and component.get('default') is not True and not component.get('group') and component['name'] not in requested:excluded.add(component['name'])
+    return excluded
 
 
 class NativeReader:
@@ -448,9 +506,13 @@ class NativeReader:
         for item in definition.get('packages',[]):
             if wanted is not None and item['name'] not in wanted:continue
             package=packages.get(item['name'],{})
-            components=[dict(id=c['name'],expected=True,observed=False,status='pending',started_at=None,completed_at=None,error=None,phases=definition_operations(c,package.get('metadata',{}).get('name')),artifact_info=component_info(c,package.get('metadata',{}).get('name'))) for c in package.get('components',[])]
+            excluded=unselected_components(definition,item,package);components=[]
+            for c in package.get('components',[]):
+                component=dict(id=c['name'],expected=True,observed=False,status='pending',started_at=None,completed_at=None,error=None,phases=definition_operations(c,package.get('metadata',{}).get('name')),artifact_info=component_info(c,package.get('metadata',{}).get('name')))
+                if c['name'] in excluded:component.update(expected=False,selection='not-selected',selection_evidence='Optional component not selected by the packaged bundle')
+                components.append(component)
             plan.append(dict(id=item['name'],name=item['name'],artifact_info=artifact_info(package,item.get('ref')),version=item.get('ref','unknown').split('@')[0],dependencies=[],layer=0,status='unknown',started_at=None,completed_at=None,error=None,operation='Definition; execution is CLI-reported',attempts=[dict(id=item['name']+'-native',number=1,status='unknown',started_at=None,completed_at=None,error=None,execution=dict(schema_version=1,observation='definition-only',components=components))],retry_supported=False,retry_reason='Use the deployment terminal'))
-        state=dict(id=run,artifact_info=artifact_info(definition),bundle_name=definition.get('metadata',{}).get('name',bundle.name),version=str(definition.get('metadata',{}).get('version','unknown')),status='deploying',created_at=started if started is not None else time.time(),started_at=started,completed_at=None,heartbeat=None,target='Local CLI process '+str(process['pid']),environment='local',mode='observed',packages=plan,layers={},invocations=[],cursor=0,reports=[],checks=[],source=dict(kind='stock-process',pid=process['pid'],output_complete=complete,note=description))
+        state=dict(id=run,artifact_info=artifact_info(definition),bundle_name=definition.get('metadata',{}).get('name',bundle.name),version=str(definition.get('metadata',{}).get('version','unknown')),status='deploying',created_at=started if started is not None else time.time(),started_at=started,completed_at=None,heartbeat=None,target='Local CLI process '+str(process['pid']),environment='local',mode='observed',packages=plan,layers={},invocations=[],cursor=0,reports=[],checks=[],source=dict(kind='stock-process',pid=process['pid'],output_complete=complete,single_cli=not description.startswith('Task console output file;'),note=description))
         packages={key:value for key,value in packages.items() if any(p['id']==key for p in plan)}
         documents={'package:'+key:deepcopy(value) for key,value in packages.items() if artifact_info(value)['has_yaml']}
         if definition.get('kind')=='UDSBundle':documents['bundle']=deepcopy(definition)

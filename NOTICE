@@ -1,8 +1,8 @@
 UDS Deploy UI / UDS Watch
 
 Portions of the read-only reader, output capture, artifact views, web interface,
-and regression tests derive from the Apache-2.0-licensed deployment watcher in
-sonic-swf-iac (scripts/uds_deploy and associated tests), based on revision
+and regression tests derive from the original Apache-2.0-licensed UDS deployment
+watcher (scripts/uds_deploy and associated tests), based on revision
 ab9ba3e9f3c25c1a7a8904a9b645b3e6cc965439 with subsequent interface refinements.
 These files have been adapted for standalone use. Deployment scheduling,
 retry execution, infrastructure configuration, and private captures are omitted.
@@ -14,6 +14,7 @@ src/uds_deploy/web/fonts/.
 This is an independent, unofficial project. UDS, Zarf, Defense Unicorns, GitLab,
 and other product names belong to their respective owners. The unmodified UDS
 logo artwork is the same light/dark artwork used in the original integrated
-viewer and identifies the supported product. UDS artwork and trademarks remain
+viewer and identifies the supported product. The unmodified full-color Doug
+mascot is used as the browser-tab icon. UDS artwork and trademarks remain
 Defense Unicorns' property; this project's code license does not grant trademark
 rights. No affiliation or endorsement is implied.

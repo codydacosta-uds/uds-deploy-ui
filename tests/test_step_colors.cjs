@@ -3,6 +3,12 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const source=fs.readFileSync(path.join(__dirname,'../src/uds_deploy/web/app.js'),'utf8');
 const start=source.indexOf('function reportedStepState('),end=source.indexOf('\n}',start)+2;
 assert.ok(start>=0&&end>start);const classify=vm.runInNewContext('('+source.slice(start,end)+')');
+const iconStart=source.indexOf('function stepIcon('),iconEnd=source.indexOf('\n',iconStart);
+const makeIcon=vm.runInNewContext('('+source.slice(iconStart,iconEnd)+')',{node:(tag,text,classes)=>({text,classes,attributes:{},setAttribute(key,value){this.attributes[key]=value;}})});
+const skippedIcon=makeIcon('not-selected');assert.equal(skippedIcon.text,'!');assert.match(skippedIcon.classes,/step-status-icon not-selected/);assert.equal(skippedIcon.attributes['aria-hidden'],'true');
+assert.equal(makeIcon('succeeded').text,'✓');assert.equal(makeIcon('unknown').text,'');
+const helpStart=source.indexOf('function showNotSelected('),helpEnd=source.indexOf('\n',helpStart),dialog={open:false,calls:0,showModal(){this.open=true;this.calls++;}};
+const showHelp=vm.runInNewContext('('+source.slice(helpStart,helpEnd)+')',{$:()=>dialog});showHelp();showHelp();assert.equal(dialog.open,true);assert.equal(dialog.calls,1,'Repeated activation keeps one explanation dialog');
 const report=(kind,message,timestamp=1,resource)=>({kind,message,timestamp,resource});
 const action=message=>report('actions.command',message);
 assert.equal(classify([action('action succeeded')],null,[],false,false).state,'succeeded');
@@ -28,7 +34,12 @@ assert.equal(classify(install,component,[],true,true).state,'running');
 assert.equal(classify(install,component,[],false,false).state,'unknown');
 assert.equal(classify([],null,[],false,false).state,'unknown');
 // Approved heuristic policy. These are isolated regressions, not live UI events.
-const inferenceStart=source.indexOf('function inferSequentialCompletion('),inferenceEnd=source.indexOf('\n}',inferenceStart)+2,infer=vm.runInNewContext('('+source.slice(inferenceStart,inferenceEnd)+')',{reportedStepState:classify});
+const selectionStart=source.indexOf('function componentNotSelected('),selectionEnd=source.indexOf('\n}',selectionStart)+2,notSelected=vm.runInNewContext('('+source.slice(selectionStart,selectionEnd)+')');
+const omitted={id:'optional',expected:false,selection:'not-selected',phases:[]};
+assert.equal(notSelected(omitted,[]),true);
+assert.equal(notSelected({...omitted,selection:undefined},[]),false,'Missing observations alone do not establish selection');
+assert.equal(notSelected(omitted,[{definition_owner:{component:'optional'},kind:'component.start'}]),false,'Observed CLI activity overrides selection metadata');
+const inferenceStart=source.indexOf('function inferSequentialCompletion('),inferenceEnd=source.indexOf('\n}',inferenceStart)+2,infer=vm.runInNewContext('('+source.slice(inferenceStart,inferenceEnd)+')',{reportedStepState:classify,componentNotSelected:notSelected});
 const seq={source:{kind:'stock-process',output_complete:true},mode:'observed',packages:[{status:'unknown'}]},helmOwner={package:'pkg1',component:'app'};
 const upgrade={...report('helm.upgrade','performing Helm upgrade',2,'chart-a'),id:'a-upgrade',definition_owner:helmOwner,label:'Helm upgrade'};
 const health={...report('health.wait','running health checks',3,'chart-a'),id:'a-health',definition_owner:helmOwner,label:'Check readiness'};
@@ -40,6 +51,7 @@ const error={...report('deployment.error','deployment error reported',3.5),id:'e
 assert.equal(infer(seq,[upgrade,health,error,nextChart])[1].inferred_complete,undefined,'An intervening error blocks assumed completion');
 assert.equal(infer({...seq,source:{...seq.source,output_complete:false}},[upgrade,health,nextChart])[1].inferred_complete,undefined);
 assert.equal(infer({...seq,mode:'concurrent'},[upgrade,health,nextChart])[1].inferred_complete,undefined);
+assert.equal(infer({...seq,source:{...seq.source,single_cli:false}},[upgrade,health,nextChart])[1].inferred_complete,undefined,'Shared parent-task output is not a single sequential CLI stream');
 assert.equal(infer({...seq,packages:[{status:'deploying'},{status:'deploying'}]},[upgrade,health,nextChart])[1].inferred_complete,undefined);
 assert.equal(infer(seq,[upgrade,health,{...nextChart,definition_owner:{package:'other',component:'other'}}])[1].inferred_complete,undefined,'Do not borrow another scope without a component/package boundary');
 const after={...report('actions.command','running command',4),id:'after',definition_owner:helmOwner,label:'Post-deploy action'};
@@ -74,6 +86,14 @@ assert.equal(classify(healthDone.slice(2),null,[],false,false).state,'succeeded'
 assert.equal(healthDone[0].inferred_package_complete,true,'Final Helm package must show green Done');
 assert.match(healthDone[3].inference_evidence,/Assumed complete/);
 assert.equal(finalHealth.inferred_complete,undefined,'Keep captured reports immutable');
+const optionalEnded={...ended,packages:[{...ended.packages[0],attempts:[{execution:{components:[{id:'app',phases:[]},omitted]}}]}]};
+assert.equal(infer(optionalEnded,healthReports)[0].inferred_package_complete,true,'Known unselected components do not block final Helm completion');
+assert.match(infer(optionalEnded,healthReports)[0].inference_evidence,/every selected component/);
+assert.equal(infer({...optionalEnded,source:{...optionalEnded.source,output_complete:false}},healthReports)[0].inferred_package_complete,undefined,'Optional selection does not waive complete-capture safety');
+const unexpectedStart={...componentStart,id:'optional-start',timestamp:2.5,definition_owner:{package:'a',component:'optional'}};
+const unfinishedOptional={...upgrade,id:'optional-upgrade',timestamp:5,definition_owner:{package:'a',component:'optional'}};
+assert.equal(infer(optionalEnded,[...healthReports,unexpectedStart,unfinishedOptional])[0].inferred_package_complete,undefined,'A selected/observed optional component with unfinished work still blocks completion');
+assert.equal(infer({...optionalEnded,packages:[{...optionalEnded.packages[0],attempts:[{execution:{components:[{id:'app',phases:[]},{...omitted,selection:undefined}]}}]}]},healthReports)[0].inferred_package_complete,undefined,'Missing component evidence is not permission to mark it unselected');
 assert.equal(infer({...ended,status:'deploying',completed_at:null},healthReports)[3].inferred_complete,undefined,'Health checks alone while CLI is running remain running');
 assert.equal(infer({...ended,source:{...ended.source,output_complete:false}},healthReports)[3].inferred_complete,undefined);
 assert.equal(infer({...ended,source:{...ended.source,activity_available:false}},healthReports)[3].inferred_complete,undefined);
@@ -109,9 +129,10 @@ assert.equal(scope([begin,{...push,definition_owner:undefined},done])[2].definit
 assert.equal(scope([begin,push,report('package.start','starting deploy',2.5),done])[3].definition_owner,undefined,'A new package clears previous component scope');
 // Labeled policy regression: only owned package states can establish parallel
 // activity. A single native console focus never marks every package running.
-const activeStart=source.indexOf('  const activePackages=new Set('),activeEnd=source.indexOf('  let confirmedTotal=',activeStart);
+const activeStart=source.indexOf('function activePackageIds('),activeEnd=source.indexOf('\n}',activeStart)+2;
 assert.ok(activeStart>=0&&activeEnd>activeStart);
-const activePolicy=(packages,focus,running=true,limited=false)=>JSON.parse(vm.runInNewContext(source.slice(activeStart,activeEnd)+'JSON.stringify([...activePackages])',{state:{packages},focus,running,limited}));
+const activeIds=vm.runInNewContext('('+source.slice(activeStart,activeEnd)+')');
+const activePolicy=(packages,focus,running=true,limited=false)=>JSON.parse(JSON.stringify([...activeIds({packages,status:running?'deploying':'unknown',source:{output_complete:!limited}},focus?[focus]:[])]));
 assert.deepEqual(activePolicy(['a','b','c'].map(id=>({id,status:'deploying'})),null),['a','b','c']);
 assert.deepEqual(activePolicy(['a','b','c'].map(id=>({id,status:'unknown'})),{definition_owner:{package:'b'}}),['b']);
 assert.deepEqual(activePolicy([{id:'a',status:'deploying'}],null,false),[]);
@@ -147,6 +168,8 @@ assert.equal(feedState({status:'deploying',source:{output_complete:false}},true)
 assert.equal(feedState({status:'completed',completed_at:10},false),null,'Keep legacy viewer follow behavior unchanged');
 const runStart=source.indexOf('function inferredRunCompletion('),runEnd=source.indexOf('\n}',runStart)+2,runDone=vm.runInNewContext('('+source.slice(runStart,runEnd)+')',{inferSequentialCompletion:infer,scopeImageReports:scope,reportedPackageState:packageState});
 assert.equal(runDone({...ended,reports:healthReports}),true,'The ended, fully observed health-complete run shows green Done');
+assert.equal(runDone({...optionalEnded,reports:healthReports}),true,'Unselected inventory does not block the run checkmark');
+assert.equal(runDone({...ended,reports:healthReports,source:{...ended.source,single_cli:false}}),false);
 assert.equal(runDone({...ended,reports:finalReports}),true);
 assert.equal(runDone({...ended,reports:healthReports,status:'deploying',completed_at:null}),false);
 assert.equal(runDone({...ended,reports:healthReports,source:{...ended.source,output_complete:false}}),false);
@@ -155,4 +178,9 @@ assert.equal(runDone({...ended,reports:[...healthReports,error]}),false);
 assert.equal(runDone({...ended,reports:healthReports,checks:[{current_deployment:true,status:'failed'}]}),false);
 assert.equal(infer({...ended,checks:[{current_deployment:true,status:'failed'}]},healthReports)[3].inferred_complete,undefined);
 assert.equal(runDone({...ended,reports:[pkgA]}),false,'Process exit without health/work evidence remains unknown');
+const taskStart=source.indexOf('function taskStatus('),taskEnd=source.indexOf('\n}',taskStart)+2,task=vm.runInNewContext('('+source.slice(taskStart,taskEnd)+')',{inferredRunCompletion:runDone,title:value=>value?value[0].toUpperCase()+value.slice(1):'Unknown'});
+assert.equal(task({...ended,reports:healthReports}).label,'Done','The overview must agree with approved detail completion');assert.equal(ended.status,'unknown','Keep raw outcome unchanged');
+for(const [status,label] of [['completed','Done'],['deploying','Running'],['waiting','Pending'],['pending','Pending'],['failed','Failed']])assert.equal(task({status}).label,label);
+assert.equal(task({...ended,reports:[]}).label,'Unconfirmed','Silence or disappearance is not Done or Pending');assert.equal(task({...ended,reports:healthReports,source:{...ended.source,output_complete:false}}).label,'Unconfirmed');
+assert.equal(task({status:'deploying',reports:[{kind:'deployment.error'}]}).label,'Failed');assert.equal(task({status:'unknown',reports:[{kind:'actions.command',message:'action failed'}]}).label,'Failed');
 console.log('Step/feed policy passed: approved terminal-health Done, guarded inference, accurate output labels, no success from silence alone.');

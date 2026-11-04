@@ -366,8 +366,8 @@ body[data-mode=live] .execution-rail .stock-job.failed .stock-job-state { color:
 .session-reports > summary { color: #82909a; font-size: 11px; cursor: pointer; }
 .session-reports > .execution-rail { margin-top: 10px; }
 body[data-mode=live] .log-top button { background: #fff; border-color: #d1d7db; }
-#definition-dialog { width: min(960px,calc(100vw - 40px)); max-height: 85vh; padding: 0; border: 1px solid #cbd5db; border-radius: 4px; background: #fff; color: #333; }
-#definition-dialog::backdrop { background: rgb(0 0 0 / 25%); }
+#definition-dialog, #not-selected-dialog { width: min(960px,calc(100vw - 40px)); max-height: 85vh; padding: 0; border: 1px solid #cbd5db; border-radius: 4px; background: #fff; color: #333; }
+#definition-dialog::backdrop, #not-selected-dialog::backdrop { background: rgb(0 0 0 / 25%); }
 .definition-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid #d8dcdf; }
 .definition-heading h2 { font-size: 14px; color: #3d586b; }
 .definition-heading button { width: 28px; height: 28px; padding: 0; border: 0; background: transparent; color: #70777b; font-size: 22px; }

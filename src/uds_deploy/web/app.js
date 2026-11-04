@@ -14,6 +14,7 @@ let logHighlightCount=0, logHighlightsLimited=false;
 let logAnchorId=null, logAnchorLabel='';
 const activityLogPositions=new Map();
 let componentFilter=null, phaseFilter=null, operationFilter=null, activeRunId=null, discoveredRuns=[];
+let discovering=false, autoFollowRuns=true;
 const disclosure=new Map(), flowScroll=new Map(), componentChoices=new Map(), stepChoices=new Map();
 const manualPackages=new Set(), finishedViews=new Set();
 let quietFinished=false;try{quietFinished=localStorage.getItem('uds-deploy-quiet-finished')==='true';}catch{}
@@ -26,7 +27,7 @@ function elapsed(start,end){if(!start)return '—';const s=Math.max(0,Math.floor
 function shortDuration(start,end){if(!start)return '—';const s=Math.max(0,Math.floor((end||Date.now()/1000)-start));return s>=3600?`${Math.floor(s/3600)}h ${Math.floor(s/60)%60}m`:s>=60?`${Math.floor(s/60)}m ${s%60}s`:`${s}s`;}
 function node(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
 function setDisclosure(key,open){const detail=[...document.querySelectorAll('details[data-disclosure]')].find(e=>e.dataset.disclosure===key);if(detail)detail.open=open;disclosure.set(key,open);}
-function stepIcon(status){const e=node('span',status==='succeeded'?'✓':status==='failed'?'×':'','step-status-icon '+status);e.setAttribute('aria-hidden','true');return e;}
+function stepIcon(status){const e=node('span',status==='succeeded'?'✓':status==='failed'?'×':status==='not-selected'?'!':'','step-status-icon '+status);e.setAttribute('aria-hidden','true');return e;}
 function statusIcon(status){const e=node('span',['completed','succeeded'].includes(status)?'✓':['failed','cancelled','canceled'].includes(status)?'×':status==='unknown'?'?':status==='skipped'?'−':'',`status-icon ${status}`);e.setAttribute('aria-hidden','true');return e;}
 async function request(url,options){const r=await fetch(url,options);if(!r.ok){const data=await r.json();throw Error(data.error||r.statusText);}return r.json();}
 function notice(message){$('notice').hidden=!message;$('notice').textContent=message||'';}
@@ -69,52 +70,73 @@ function showPage(view,navigate=false){
   if(navigate){const url=new URL(location.href);if(view==='history')url.searchParams.delete('deployment');else if(run)url.searchParams.set('deployment',run);window.history.pushState(null,'',url);}
   if(view==='history'){notice('');renderHistory();if(!stream){$('connection').textContent='Local viewer';if(liveOnly)$('connection').className='live';}}else if(state){render();scheduleWires();}
 }
+function taskStatus(snapshot){
+  if(snapshot.status==='failed'||(snapshot.reports||[]).some(r=>r.kind==='deployment.error'||r.message==='action failed'))return {status:'failed',label:'Failed',evidence:'A deployment failure was reported'};
+  if(['completed','succeeded'].includes(snapshot.status))return {status:'completed',label:'Done',evidence:'Deployment completed'};
+  if(inferredRunCompletion(snapshot))return {status:'completed',label:'Done',evidence:'Assumed complete from the full error-free deployment output and completed observed work; native exit code was not observed'};
+  if(['deploying','running'].includes(snapshot.status))return {status:'deploying',label:'Running',evidence:'Deployment is in progress'};
+  if(['waiting','pending'].includes(snapshot.status))return {status:'waiting',label:'Pending',evidence:'Waiting to start'};
+  return {status:snapshot.status||'unknown',label:snapshot.status==='unknown'?'Unconfirmed':title(snapshot.status),evidence:'No confirmed final result was observed'};
+}
 function renderHistory(){
   const search=$('deployment-search').value.trim().toLocaleLowerCase(),filter=$('deployment-status').value;
   const items=discoveredRuns.filter(r=>`${r.bundle_name} ${r.version} ${r.environment} ${r.target} ${r.id}`.toLocaleLowerCase().includes(search)&&(!filter||filter==='active'&&['waiting','deploying'].includes(r.status)||filter==='unknown'&&['unknown','cancelled'].includes(r.status)||r.status===filter));
   $('deployment-total').textContent=discoveredRuns.length;
   $('deployment-table-scroll').hidden=items.length===0;
-  $('history-empty').hidden=discoveredRuns.length!==0;$('history-note').textContent=liveOnly?'Current local tasks only. No database, saved deployment history, or UI-owned retries.':`${items.length} of ${discoveredRuns.length} saved runs · latest 50 shown. Start deployments from the terminal.`;
-  const key=JSON.stringify([discoveredRuns,search,filter]);
+  $('history-empty').hidden=discoveredRuns.length!==0;$('history-note').textContent=liveOnly?'Current tasks only. No saved deployment history.':`${items.length} of ${discoveredRuns.length} saved runs · latest 50 shown. Start deployments from the terminal.`;
+  const key=JSON.stringify([items.map(item=>[item.id,liveOnly?taskStatus(item):item.status,item.bundle_name,item.version,item.environment,item.target,item.created_at,item.started_at,item.packages?.length,item.package_counts,item.package_count,item.unverified_operations]),search,filter]);
   if(key!==historyKey){
     historyKey=key;const rows=document.createDocumentFragment();
     for(const item of items){
       const row=node('tr');row.dataset.run=item.id;
-      const status=node('td'),badge=node('span',undefined,`history-status ${item.status}`);badge.append(statusIcon(item.status),node('span',item.status==='deploying'?'Running':title(item.status)));status.append(badge);
+      const appearance=liveOnly?taskStatus(item):{status:item.status,label:item.status==='deploying'?'Running':title(item.status)};
+      const status=node('td'),badge=node('a',undefined,`history-status ${appearance.status}`);badge.title=appearance.evidence||'';badge.append(statusIcon(appearance.status),node('span',appearance.label));status.append(badge);
       const deployment=node('td'),link=node('a',`${item.bundle_name} ${item.version}`,'deployment-link');link.href=deploymentURL(item.id);link.onclick=e=>{if(e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey){e.preventDefault();chooseRun(item.id);}};
-      deployment.append(link,node('span',`#${item.id.slice(0,8)} · ${new Date(item.created_at*1000).toLocaleString()}`,'cell-secondary'));
-      const target=node('td');target.title=item.target;target.append(node('span',item.environment,'environment-label'),node('span',item.target?.includes(':cluster/')?item.target.split(':cluster/').pop():item.target,'cell-secondary'));
+      badge.href=link.href;badge.onclick=link.onclick;badge.setAttribute('aria-label',appearance.label+' — view '+item.bundle_name+' '+item.version);
+      const date=new Date((liveOnly?(item.started_at||item.created_at):item.created_at)*1000),stamp=node('span',liveOnly?date.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):`#${item.id.slice(0,8)} · ${date.toLocaleString()}`,'cell-secondary');stamp.title=date.toLocaleString();deployment.append(link,stamp);
+      const target=node('td',undefined,'task-target');if(!liveOnly){target.title=item.target;target.append(node('span',item.environment,'environment-label'),node('span',item.target?.includes(':cluster/')?item.target.split(':cluster/').pop():item.target,'cell-secondary'));}
       const packages=node('td'),counts=item.package_counts;
-      if(counts){packages.append(node('span',`${counts.completed||0} / ${item.package_count}`,'package-total'));const icons=node('span',undefined,'package-summary');for(const state of ['completed','deploying','waiting','failed','unknown','cancelled'])if(counts[state]){const part=node('span',undefined,'summary-status');part.title=`${counts[state]} ${state}`;part.append(statusIcon(state),node('span',String(counts[state])));icons.append(part);}packages.append(icons);}else packages.append(node('span','See pipeline','muted'));
+      if(liveOnly){const total=item.packages?.length||item.package_count;packages.append(node('span',total?total+' '+(total===1?'package':'packages'):'—','package-total'));}
+      else if(counts){packages.append(node('span',`${counts.completed||0} / ${item.package_count}`,'package-total'));const icons=node('span',undefined,'package-summary');for(const state of ['completed','deploying','waiting','failed','unknown','cancelled'])if(counts[state]){const part=node('span',undefined,'summary-status');part.title=`${counts[state]} ${state}`;part.append(statusIcon(state),node('span',String(counts[state])));icons.append(part);}packages.append(icons);}else packages.append(node('span','See pipeline','muted'));
       if(item.unverified_operations)packages.append(node('span',`${item.unverified_operations} unverified operation${item.unverified_operations===1?'':'s'}`,'cell-secondary warning-text'));
       const duration=node('td',undefined,'duration-cell');duration.dataset.durationRun=item.id;
       const actions=node('td',undefined,'history-actions'),view=node('a','View','table-action');view.href=deploymentURL(item.id);view.setAttribute('aria-label','View deployment '+item.id.slice(0,8));view.onclick=e=>{if(e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey){e.preventDefault();chooseRun(item.id);}};
       const download=node('a','↓','table-action download-action');download.href=`${api}/${item.id}/logs?download=1`;download.title='Download original deployment output';download.setAttribute('aria-label','Download logs '+item.id.slice(0,8));download.download='deployment.log';actions.append(view,download);
       row.append(status,deployment,target,packages,duration,actions);rows.append(row);
     }
-    if(!items.length&&discoveredRuns.length){const row=node('tr'),cell=node('td','No deployments match these filters.','no-matches');cell.colSpan=6;row.append(cell);rows.append(row);}
+    if(!items.length&&discoveredRuns.length){const row=node('tr'),cell=node('td','No deployments match these filters.','no-matches');cell.colSpan=liveOnly?5:6;row.append(cell);rows.append(row);}
     $('deployment-rows').replaceChildren(rows);
   }
   for(const el of document.querySelectorAll('[data-duration-run]')){const item=discoveredRuns.find(r=>r.id===el.dataset.durationRun);el.textContent=item.started_at&&(item.completed_at||item.status==='deploying')?shortDuration(item.started_at,item.completed_at):'—';}
 }
-async function discover(){try{
+function isActiveRun(item){return ['waiting','deploying'].includes(item?.status);}
+function nextActiveRun(runs,current){
+  const active=runs.filter(isActiveRun),previous=runs.find(r=>r.id===current);
+  return active.length===1&&active[0].id!==current&&!isActiveRun(previous)&&(!previous||active[0].created_at>previous.created_at)?active[0].id:null;
+}
+async function discover(){
+  if(discovering)return;
+  discovering=true;
+  try{
   const runs=await request(api);discoveredRuns=runs;const previous=$('history').value;
   renderHistory();
   if(liveOnly){
     const processes=await request(new URL('api/processes',location.href).pathname);
     $('processes').replaceChildren();
     for(const process of processes)$('processes').append(node('p',`${process.tool} ${process.kind} · PID ${process.pid} · process detected; detail available only for task-captured output.`));
-    if(initialRoute&&!new URL(location.href).searchParams.has('deployment')&&runs.length){initialRoute=false;await chooseRun((runs.find(r=>r.status==='deploying')||runs[0]).id,false);}
   }
   if(!runs.length){$('connection').textContent='Local viewer ready';$('connection').className=liveOnly?'live':'';return;}
   const key=runs.map(r=>`${r.id}:${r.status}`).join('|');
   if($('history').dataset.optionsKey!==key){$('history').replaceChildren();for(const item of runs){const o=node('option',`${item.environment} / ${item.bundle_name} · ${item.status} · ${new Date(item.created_at*1000).toLocaleString()}`);o.value=item.id;$('history').append(o);}$('history').dataset.optionsKey=key;}
   const active=runs.find(r=>['waiting','deploying'].includes(r.status));updateActiveLink();$('history').value=run||previous||(active||runs[0]).id;
+  const next=liveOnly&&autoFollowRuns&&pageView==='pipeline'&&state?nextActiveRun(runs,run):null;
   if(initialRoute){initialRoute=false;let id=new URL(location.href).searchParams.get('deployment');if(liveOnly&&id&&!runs.some(r=>r.id===id)){id=(active||runs[0]).id;window.history.replaceState(null,'',deploymentURL(id));}if(id)await chooseRun(id,false);else showPage('history');}
-  else if(liveOnly&&active&&state&&active.id!==run&&!runs.some(r=>r.id===run))await chooseRun(active.id,false);
+  else if(next)await chooseRun(next,false);
   else if(state&&(liveOnly||runs.some(item=>item.id===run&&item.status!==state.status)))await refreshState();
-}catch(e){notice(e.message);}}
+}catch(e){notice(e.message);}finally{discovering=false;}}
 async function chooseRun(id,navigate=true){
+  // Picking a historical run pins it; choosing an active run resumes following.
+  if(navigate)autoFollowRuns=isActiveRun(discoveredRuns.find(r=>r.id===id));
   generation++;const mine=generation;if(stream)stream.close();if(refreshTimer){clearTimeout(refreshTimer);refreshTimer=null;}
   run=id;state=null;selected=attempt=null;pipelineSelection=null;autoAttempt=true;full=true;rawMode=liveOnly;inspectorOpen=false;clearScope();$('history').value=id;
   $('connection').textContent='Loading deployment…';$('connection').className='';
@@ -156,11 +178,101 @@ function displayedGroups(){
   return [{id:0,label:state.bundle_name,packages:state.packages.map(p=>p.id)}];
 }
 function stageNames(groups){return groups.map(g=>grouping==='stages'||liveOnly?g.label:'Task scheduling');}
+function showNotSelected(){const dialog=$('not-selected-dialog');if(!dialog.open)dialog.showModal();}
+function componentNotSelected(component,reports){
+  return component?.expected===false&&component.selection==='not-selected'&&!(reports||[]).some(r=>r.definition_owner?.component===component.id);
+}
+function operationGroups(items){
+  const groups=new Map();
+  for(const item of items){
+    if(['package.start','component.start'].includes(item.kind))continue;
+    const key=(item.kind.startsWith('helm.')||item.kind==='health.wait')&&item.resource?'chart:'+item.resource:item.kind.startsWith('images.')?item.kind:item.id;
+    if(!groups.has(key))groups.set(key,[]);groups.get(key).push(item);
+  }
+  return groups;
+}
+function activePackageIds(snapshot,reports){
+  const running=['waiting','deploying'].includes(snapshot.status),limited=snapshot.source?.output_complete===false||snapshot.source?.activity_available===false;
+  const active=new Set(running&&!limited?(snapshot.packages||[]).filter(p=>p.status==='deploying').map(p=>p.id):[]);
+  const focus=reports.filter(r=>r.definition_owner).reduce((a,b)=>!a||b.timestamp>=a.timestamp?b:a,null);
+  if(!active.size&&running&&!limited&&focus)active.add(focus.definition_owner.package);
+  return active;
+}
+function sequentialCli(snapshot,reports){return snapshot.source?.kind==='stock-process'&&snapshot.source.output_complete===true&&snapshot.source.single_cli!==false&&snapshot.mode==='observed'&&activePackageIds(snapshot,reports).size<=1;}
+function operationLabel(report,appearance){
+  if(!report)return 'No activity reported';
+  if(report.kind==='health.wait')return appearance?.state==='succeeded'?'Helm resources ready':'Waiting for Helm resources';
+  const labels={'helm.prepare':'Preparing Helm chart','helm.install':'Installing Helm release','helm.upgrade':'Upgrading Helm release','images.push':'Pushing images','images.pull':'Pulling images','component.start':'Starting component','package.start':'Starting package','cluster.connect':'Connecting to cluster','deployment.error':'Deployment error'};
+  if(report.kind==='actions.command')return report.message==='action failed'?'Action failed':report.label||'Running action';
+  return labels[report.kind]||report.label||report.message;
+}
+function sourceClock(report,first=false){const value=first?(report?.first_source_timestamp??report?.source_timestamp):report?.source_timestamp;return Number.isFinite(value)&&value>0?value:null;}
+function durationText(span,now=Date.now()/1000){
+  const end=span.running?now:span.end;
+  if(!Number.isFinite(span.start)||!Number.isFinite(end)||end<span.start)return '—';
+  const seconds=Math.floor(end-span.start),minutes=Math.floor(seconds/60),hours=Math.floor(minutes/60);
+  return (span.estimated?'~':'')+(hours?hours+'h '+minutes%60+'m':minutes?minutes+'m '+seconds%60+'s':seconds+'s');
+}
+function durationNode(span){
+  const element=node('span',durationText(span),'activity-duration');element.title=span.evidence||'Timing unavailable: the CLI did not report trustworthy start/end times';
+  if(Number.isFinite(span.start)){element.dataset.spanStart=span.start;if(Number.isFinite(span.end))element.dataset.spanEnd=span.end;element.dataset.spanRunning=String(!!span.running);element.dataset.spanEstimated=String(!!span.estimated);}
+  return element;
+}
+function updateDurations(){for(const element of document.querySelectorAll('[data-span-start]'))element.textContent=durationText({start:Number(element.dataset.spanStart),end:element.dataset.spanEnd===undefined?null:Number(element.dataset.spanEnd),running:element.dataset.spanRunning==='true',estimated:element.dataset.spanEstimated==='true'});}
+function operationTiming(items,snapshot,reports,appearance){
+  if(!items.length||items.some(r=>r.timing_uncertain||sourceClock(r,true)===null))return {};
+  if(items.every(r=>['action succeeded','action failed','done pushing images','done pulling images'].includes(r.message)&&r.first_log_id===r.log_id))return {};
+  const start=Math.min(...items.map(r=>sourceClock(r,true))),last=items.reduce((a,b)=>b.timestamp>=a.timestamp?b:a);
+  if(['action succeeded','action failed','done pushing images','done pulling images'].includes(last.message))return {start,end:sourceClock(last),evidence:'Duration from SDK log timestamps'};
+  if(last.inferred_complete){const boundary=reports.find(r=>r.id===last.inference_boundary),end=boundary?sourceClock(boundary):snapshot.completed_at;return {start,end,estimated:true,evidence:'Estimated observed span to the next CLI activity or process end; not an exact finish callback'};}
+  if(appearance?.state==='running')return {start,running:true,evidence:'Elapsed since the SDK reported this operation; it is still active'};
+  return {};
+}
+function scopeTiming(kind,id,packageId,reports,snapshot,active,record){
+  if(record?.started_at)return {start:record.started_at,end:record.completed_at,running:active&&!record.completed_at,evidence:'Timing from explicit execution records'};
+  const startReport=reports.find(r=>r.kind===kind&&r.definition_owner?.package===packageId&&(kind==='package.start'||r.definition_owner.component===id));
+  if(!startReport||startReport.timing_uncertain||sourceClock(startReport,true)===null)return {};
+  const start=sourceClock(startReport,true);
+  if(active)return {start,running:true,evidence:'Elapsed since the SDK reported this '+(kind==='package.start'?'package':'component')+' start'};
+  if(!sequentialCli(snapshot,reports))return {};
+  const next=reports.filter(r=>r.timestamp>startReport.timestamp&&r.definition_owner&&(
+    r.kind==='package.start'&&r.definition_owner.package!==packageId||kind==='component.start'&&r.kind==='component.start'&&r.definition_owner.package===packageId&&r.definition_owner.component!==id
+  )).sort((a,b)=>a.timestamp-b.timestamp)[0];
+  const end=next?sourceClock(next):snapshot.completed_at;
+  return {start,end,estimated:true,evidence:'Estimated observed span to the next component/package or CLI end; not an exact finish callback'};
+}
+function componentOverview(component,items,snapshot,reports,active){
+  if(componentNotSelected(component,items))return {state:'not-selected',label:'Not selected',operation:'Optional component',timing:{},evidence:component.selection_evidence};
+  if(!active&&!items.length&&component?.expected===true&&component.status==='pending'&&!component.started_at&&['waiting','deploying'].includes(snapshot.status)&&snapshot.source?.activity_available!==false&&sequentialCli(snapshot,reports)&&!reports.some(r=>r.kind==='component.start'&&!r.definition_owner?.component))return {state:'pending',label:'Pending',operation:'—',evidence:'Component has not started; no start was reported in the complete live deployment output'};
+  const groups=[...operationGroups(items).values()],last=items.filter(r=>r.kind!=='component.start').reduce((a,b)=>!a||b.timestamp>a.timestamp?b:a,null);
+  const outcomes=groups.map(group=>reportedStepState(group,component,snapshot.checks,false,false));
+  const failed=items.some(r=>r.kind==='deployment.error'||r.message==='action failed')||outcomes.some(outcome=>outcome.state==='failed');
+  const status=failed?'failed':active?'running':groups.length&&outcomes.every(outcome=>outcome.state==='succeeded')?'succeeded':'unknown';
+  const label=status==='failed'?'Failed':status==='running'?'Running':status==='succeeded'?'Done':'Unknown';
+  const appearance=last?reportedStepState(groups.find(group=>group.includes(last))||[last],component,snapshot.checks,active,true):null;
+  return {state:status,label,operation:last?(active&&appearance?.state==='succeeded'?'Last: ':'')+operationLabel(last,appearance):items.length?'Start reported':'No activity reported',evidence:status==='succeeded'?'All observed steps completed; inspect steps for reported versus inferred evidence':appearance?.evidence||'No final result reported'};
+}
+function activityOverviews(snapshot,reports){
+  const running=['waiting','deploying'].includes(snapshot.status),active=activePackageIds(snapshot,reports);
+  if(snapshot.source?.output_complete===false||snapshot.source?.activity_available===false)return running?[{state:'unknown',label:'Current activity unavailable',detail:'The complete CLI feed is unavailable. Check the deployment terminal.',context:'',timing:{}}]:[];
+  const packages=active.size?[...active]:[null];
+  const activities=packages.map(id=>{
+    const candidates=reports.filter(r=>id===null||r.definition_owner?.package===id),report=candidates.reduce((a,b)=>!a||b.timestamp>a.timestamp?b:a,null);
+    if(!report)return running?{state:'unknown',label:'Waiting for CLI activity',context:id||'',detail:'No SDK activity report has been captured yet.',timing:{}}:null;
+    const owner=report.definition_owner||{},pkg=snapshot.packages.find(p=>p.id===owner.package),component=pkg?.attempts?.slice(-1)[0]?.execution?.components?.find(c=>c.id===owner.component);
+    const group=[...operationGroups(candidates).values()].find(items=>items.includes(report))||[report],appearance=report.kind==='deployment.error'?{state:'failed',evidence:'CLI reported a deployment error'}:reportedStepState(group,component,snapshot.checks,running,true);
+    const timing=appearance.state==='running'?{start:sourceClock(report,true),running:true,evidence:'Elapsed in the current SDK-reported activity'}:operationTiming(group,snapshot,reports,appearance);
+    return {state:appearance.state,label:operationLabel(report,appearance),context:[owner.package,owner.component].filter(Boolean).join(' / '),detail:appearance.state==='succeeded'?appearance.evidence:report.error||report.message,report,timing,ended:!running};
+  }).filter(Boolean);
+  const latest=reports.reduce((a,b)=>!a||b.timestamp>a.timestamp?b:a,null);
+  if(active.size&&latest?.kind==='deployment.error'&&!latest.definition_owner)activities.unshift({state:'failed',label:'Deployment error',context:'',detail:latest.error||latest.message,report:latest,timing:{},ended:!running});
+  return activities;
+}
 function inferSequentialCompletion(state,reports){
   // Presentation-only policy: stock UDS/Zarf executes these operations in one
   // sequential CLI stream. Never alter raw reports or use another process,
   // missing output, elapsed time, or process disappearance as success evidence.
-  if(state.source?.kind!=='stock-process'||state.source.output_complete!==true||state.source.activity_available===false||state.status==='failed'||['concurrent','parallel'].includes(state.mode)||(state.packages||[]).filter(p=>p.status==='deploying').length>1)return reports;
+  if(state.source?.kind!=='stock-process'||state.source.output_complete!==true||state.source.activity_available===false||state.source.single_cli===false||state.status==='failed'||['concurrent','parallel'].includes(state.mode)||(state.packages||[]).filter(p=>p.status==='deploying').length>1)return reports;
   const errors=reports.filter(r=>r.kind==='deployment.error'||r.message==='action failed'||r.kind==='actions.command'&&r.label==='Failure action'),groups=new Map(),assumptions=new Map();
   const sameOwner=(a,b)=>a&&b&&a.package===b.package&&a.component===b.component;
   const noErrorBetween=(start,end)=>!errors.some(r=>r.timestamp>start&&r.timestamp<=end);
@@ -203,7 +315,7 @@ function inferSequentialCompletion(state,reports){
   if(state.completed_at&&!['waiting','deploying'].includes(state.status)){
     const finalStart=reports.filter(r=>r.kind==='package.start').reduce((a,b)=>!a||b.timestamp>=a.timestamp?b:a,null),pkg=state.packages?.slice(-1)[0];
     if(finalStart&&pkg&&finalStart.definition_owner?.package===pkg.id&&!errors.some(e=>e.timestamp>=finalStart.timestamp)){
-      const components=pkg.attempts?.slice(-1)[0]?.execution?.components||[],own=projected.filter(r=>r.definition_owner?.package===pkg.id&&r.timestamp>=finalStart.timestamp),last=own.filter(r=>!['package.start','component.start'].includes(r.kind)).reduce((a,b)=>!a||b.timestamp>=a.timestamp?b:a,null),groups=new Map();
+      const own=projected.filter(r=>r.definition_owner?.package===pkg.id&&r.timestamp>=finalStart.timestamp),components=(pkg.attempts?.slice(-1)[0]?.execution?.components||[]).filter(c=>!componentNotSelected(c,own)),last=own.filter(r=>!['package.start','component.start'].includes(r.kind)).reduce((a,b)=>!a||b.timestamp>=a.timestamp?b:a,null),groups=new Map();
       for(const r of own){
         if(!r.definition_owner.component||['package.start','component.start'].includes(r.kind))continue;
         const key=JSON.stringify([r.definition_owner.component,(r.kind.startsWith('helm.')||r.kind==='health.wait')&&r.resource?'chart:'+r.resource:r.kind.startsWith('images.')?r.kind:r.kind==='actions.command'?'action:'+(r.declaration_id||r.action_id||r.id):r.id]);
@@ -213,7 +325,7 @@ function inferSequentialCompletion(state,reports){
       const complete=groups.size&&[...groups.values()].every(items=>{const component=components.find(c=>c.id===items[0].definition_owner.component);return reportedStepState(items,component,state.checks,false,false).state==='succeeded';});
       const finalAction=last?.kind==='actions.command'&&last.message==='action succeeded'&&['Post-deploy action','Success action'].includes(last.label);
       const finalHealth=last?.kind==='health.wait'&&last.inferred_complete;
-      if(covered&&complete&&(finalAction||finalHealth))projected=projected.map(r=>r.id===finalStart.id?{...r,inferred_package_complete:true,inference_evidence:finalHealth?'Assumed complete: final Helm health checks were reached, every declared component was observed, all observed work is complete, and the CLI ended with a complete error-free capture. Native exit code was not observed.':'Assumed complete: final post-deploy action succeeded, every declared component was observed, all observed work is complete, and the CLI ended without a reported error'}:r);
+      if(covered&&complete&&(finalAction||finalHealth))projected=projected.map(r=>r.id===finalStart.id?{...r,inferred_package_complete:true,inference_evidence:finalHealth?'Assumed complete: final Helm health checks were reached, every selected component was observed, all observed work is complete, and the CLI ended with a complete error-free capture. Native exit code was not observed.':'Assumed complete: final post-deploy action succeeded, every selected component was observed, all observed work is complete, and the CLI ended without a reported error'}:r);
     }
   }
   return projected;
@@ -276,7 +388,7 @@ function inferredRunCompletion(snapshot){
   return snapshot.packages.every(pkg=>reportedPackageState(pkg,reports.filter(r=>r.definition_owner?.package===pkg.id),false).state==='succeeded');
 }
 function showPackageConnectors(layout,mode,activeCount,packageCount){
-  return layout==='pipeline'&&packageCount>1&&activeCount<=1&&!['concurrent','parallel'].includes(mode);
+  return layout==='pipeline'&&mode==='observed'&&packageCount>1&&activeCount<=1;
 }
 function scopeImageReports(reports){
   // Older attached readers left the SDK's resource-less completion unassigned.
@@ -324,7 +436,8 @@ function renderYaml(parent,text){
 async function showDefinition(packageId=null){
   const mine=++definitionRequest,dialog=$('definition-dialog'),id=run;
   const packageKind=state.packages.find(p=>p.id===packageId)?.artifact_info?.kind;
-  $('definition-title').textContent=packageId?packageId+' · '+(packageKind==='ZarfInitConfig'?'Zarf init config':'Zarf package config'):state.bundle_name+' · Bundle YAML';
+  if(packageId)$('definition-title').replaceChildren(node('span',packageId,'definition-package-name'),document.createTextNode(' · '+(packageKind==='ZarfInitConfig'?'Zarf init config':'Zarf package config')));
+  else $('definition-title').textContent=state.bundle_name+' · Bundle YAML';
   const reference=packageId?state.packages.find(p=>p.id===packageId)?.artifact_info?.reference:null;
   $('definition-reference').textContent=reference?'Reference: '+reference:'';$('definition-reference').hidden=!reference;
   $('definition-note').textContent='Packaged definition, including values and commands. External configuration and CLI overrides are not applied.';
@@ -345,7 +458,6 @@ function renderStockPipeline(){
   const canvas=$('packages');canvas.classList.add('stock-pipeline');
   const key=JSON.stringify([state.id,state.status,state.completed_at,state.mode,state.source,state.reports,state.checks,inspectorOpen,document.body.dataset.outputFocus,state.artifact_info,state.packages,packageLayout,pipelineSelection,state.packages.map(p=>componentChoices.get(state.id+'/'+p.id)),[...stepChoices],quietFinished]);
   if(canvas.dataset.stockKey===key)return;canvas.dataset.stockKey=key;
-  const opened=new Set([...canvas.querySelectorAll('details[open][data-disclosure]')].map(e=>e.dataset.disclosure));
   canvas.replaceChildren();
   const reports=inferSequentialCompletion(state,scopeImageReports(state.reports||[])),errors=reports.filter(r=>r.message==='action failed'||r.kind==='deployment.error'),latest=reports.reduce((last,item)=>!last||item.timestamp>last.timestamp?item:last,null);
   function openOutput(focus,context,activity=null){
@@ -366,35 +478,38 @@ function renderStockPipeline(){
     }
     return {action:last.label==='Pre-deploy action'?'Run pre-deploy action':last.label==='Post-deploy action'?'Run post-deploy action':last.label,target:last.resource||'',detail:last.message,error:last.error};
   }
-  function groupedSteps(items){
-    const groups=new Map();
-    for(const item of items){
-      if(['package.start','component.start'].includes(item.kind))continue;
-      const key=(item.kind.startsWith('helm.')||item.kind==='health.wait')&&item.resource?'chart:'+item.resource:item.kind.startsWith('images.')?item.kind:item.id;
-      if(!groups.has(key))groups.set(key,[]);groups.get(key).push(item);
-    }
-    return groups;
+  function groupedSteps(items){return operationGroups(items);}
+  function currentStep(items,component){
+    const packageId=items.find(r=>r.definition_owner)?.definition_owner.package;if(!packageId)return items.includes(latest);
+    if(!activePackages.has(packageId))return false;
+    const candidates=reports.filter(r=>r.definition_owner?.package===packageId&&(!(component?.observed&&component.status==='running')||r.definition_owner.component===component.id));
+    return items.includes(candidates.reduce((a,b)=>!a||b.timestamp>a.timestamp?b:a,null));
   }
   function steps(items,component,parent,context){
     const groups=groupedSteps(items),choiceKey=state.id+'/step/'+context,detailsKey=state.id+'/activity/'+context;
-    const preferred=stepChoices.get(choiceKey),selectedKey=groups.has(preferred)?preferred:[...groups].find(([,rows])=>rows.includes(latest))?.[0]||[...groups].find(([,rows])=>reportedStepState(rows,component,state.checks,false,false).state==='failed')?.[0]||[...groups.keys()].slice(-1)[0];
+    const preferred=stepChoices.get(choiceKey),selectedKey=groups.has(preferred)?preferred:[...groups].find(([,rows])=>currentStep(rows,component))?.[0]||[...groups].find(([,rows])=>reportedStepState(rows,component,state.checks,false,false).state==='failed')?.[0]||[...groups.keys()].slice(-1)[0];
     const rail=node('div',undefined,'execution-rail');rail.setAttribute('aria-label',context+' CLI activity in first-observed order');
     rail.title='First-observed order; repeated reports for the same activity are grouped. This is not a complete execution trace.';
     for(const [key,items]of groups){
-      const text=describe(items,component),appearance=reportedStepState(items,component,state.checks,state.status==='deploying'&&state.source.output_complete!==false,items.includes(latest));
+      const text=describe(items,component),appearance=reportedStepState(items,component,state.checks,state.status==='deploying'&&state.source.output_complete!==false,currentStep(items,component));
       const job=node('button',undefined,'stock-job reported '+appearance.state);job.dataset.report=key;job.dataset.focusKey=context+':'+key;job.dataset.stepStatus=appearance.state;job.dataset.resultInferred=String(!!appearance.inferred);
       job.setAttribute('aria-label',`${context} · ${text.action}${text.target?' '+text.target:''} · ${appearance.evidence}`);
       const label=node('span',undefined,'stock-job-label'),heading=node('span',undefined,'stock-job-heading');
       const result=appearance.state==='succeeded'?(items.some(r=>r.kind.startsWith('helm.')||r.kind==='health.wait')&&!appearance.inferred?'Deployed':'Done'):appearance.state==='running'?'Running':appearance.state==='failed'?'Failed':'Result unknown';
-      heading.append(node('strong',text.action),node('span',result,'stock-job-state'));label.append(heading,node('span',appearance.state==='running'&&Number.isFinite(text.image_percent)?text.image.split('/').pop()+' · '+text.image_percent.toFixed(1)+'%':text.target||title(text.detail)));job.append(stepIcon(appearance.state),label);
+      heading.append(node('strong',text.action),durationNode(operationTiming(items,state,reports,appearance)),node('span',result,'stock-job-state'));label.append(heading,node('span',appearance.state==='running'&&Number.isFinite(text.image_percent)?text.image.split('/').pop()+' · '+text.image_percent.toFixed(1)+'%':text.target||title(text.detail)));job.append(stepIcon(appearance.state),label);
       job.title=`${context}\n${text.action}${text.target?' '+text.target:''}${text.namespace?' in namespace '+text.namespace:''}\nCLI report: ${text.detail}\n${appearance.evidence}\nClick to jump to this activity in the full session output.`;
-      job.classList.toggle('latest-report',state.status==='deploying'&&state.source.output_complete!==false&&items.includes(latest));job.classList.toggle('selected',key===selectedKey);job.setAttribute('aria-pressed',String(key===selectedKey));
+      job.classList.toggle('latest-report',state.status==='deploying'&&state.source.output_complete!==false&&currentStep(items,component));job.classList.toggle('selected',key===selectedKey);job.setAttribute('aria-pressed',String(key===selectedKey));
       job.onclick=()=>{stepChoices.set(choiceKey,key);setDisclosure(detailsKey,true);const owner=items.find(r=>r.definition_owner)?.definition_owner?.package;if(owner)manualPackages.add(state.id+'/package/'+owner);openOutput(job.dataset.focusKey,context,{items,label:text.action+(text.target?' · '+text.target:'')});};
-      if(rail.childElementCount){const arrow=node('span','→','activity-connector');arrow.setAttribute('aria-hidden','true');rail.append(arrow);}
+      if(rail.childElementCount&&sequentialCli(state,reports)){const arrow=node('span','→','activity-connector');arrow.setAttribute('aria-hidden','true');rail.append(arrow);}
       rail.append(job);
     }
     parent.classList.toggle('no-observed-steps',!groups.size);
-    if(!groups.size)rail.append(node('span',items.some(r=>r.kind==='component.start')?'Component start reported; no action result captured.':'No CLI activity captured for this component.','unobserved-component'));
+    if(!groups.size){
+      const omitted=componentNotSelected(component,items),message=node(omitted?'button':'span',undefined,'unobserved-component'+(omitted?' selection-explanation':''));
+      if(omitted){message.type='button';message.setAttribute('aria-haspopup','dialog');message.setAttribute('aria-controls','not-selected-dialog');message.onclick=showNotSelected;message.append(stepIcon('not-selected'));}
+      const pending=componentOverview(component,items,state,reports,false).state==='pending';
+      message.append(document.createTextNode(omitted?'Not selected by the packaged bundle; no deployment expected.':pending?'Pending — this component has not started yet.':items.some(r=>r.kind==='component.start')?'Component start reported; no action result captured.':'Activity could not be determined from the captured output.'));rail.append(message);
+    }
     const flow=node('div',undefined,'activity-flow');
     flow.append(rail);parent.append(flow);
     const pushed=items.filter(r=>r.kind==='images.push'&&r.resource),batchDone=items.filter(r=>r.kind==='images.push'&&r.message==='done pushing images').reduce((a,b)=>!a||b.timestamp>a.timestamp?b:a,null);
@@ -410,11 +525,12 @@ function renderStockPipeline(){
       flow.append(transfers);
     }
     if(groups.size){
-      const selectedItems=groups.get(selectedKey),text=describe(selectedItems,component),appearance=reportedStepState(selectedItems,component,state.checks,state.status==='deploying'&&state.source.output_complete!==false,selectedItems.includes(latest)),details=node('details',undefined,'execution-details selected-step-details');
+      const selectedItems=groups.get(selectedKey),text=describe(selectedItems,component),appearance=reportedStepState(selectedItems,component,state.checks,state.status==='deploying'&&state.source.output_complete!==false,currentStep(selectedItems,component)),details=node('details',undefined,'execution-details selected-step-details');
       details.dataset.disclosure=detailsKey;details.dataset.selectedStep=selectedKey;details.open=disclosure.has(detailsKey)?disclosure.get(detailsKey):appearance.state==='failed';const initiallyOpen=details.open;details.ontoggle=()=>{if(details.isConnected){disclosure.set(detailsKey,details.open);if(details.open&&!initiallyOpen){const owner=selectedItems.find(r=>r.definition_owner)?.definition_owner?.package;if(owner)manualPackages.add(state.id+'/package/'+owner);}}};details.append(node('summary','Step details'));
       const header=node('div',undefined,'step-detail-heading'),result=appearance.state==='succeeded'?'Done':appearance.state==='running'?'Running':appearance.state==='failed'?'Failed':'Result unknown';header.append(node('h3',text.action),node('span',result,'step-detail-result '+appearance.state));details.append(header);
       const facts=node('dl',undefined,'step-detail-facts');function fact(label,value){if(value)facts.append(node('dt',label),node('dd',String(value)));}
       fact(text.manifest?'Manifest':'Target',text.target);fact('Packaged namespace',text.namespace);fact('Release',text.release);if(text.chart)fact('Chart',text.chart+(text.chartVersion?' '+text.chartVersion:''));fact('Last CLI report',text.error||text.detail);fact('Evidence',appearance.evidence);
+      const duration=node('dd');duration.append(durationNode(operationTiming(selectedItems,state,reports,appearance)));facts.append(node('dt','Duration'),duration);
       if(appearance.inferred)fact('Completion basis','Inferred from CLI progress and completion evidence, not an explicit success report');
       details.append(facts);const actions=node('div',undefined,'step-detail-actions'),logs=node('button','Go to logs','step-log-link');logs.onclick=()=>openOutput(context+':'+selectedKey,context,{items:selectedItems,label:text.action+(text.target?' · '+text.target:'')});actions.append(logs);details.append(actions);parent.append(details);
     }
@@ -423,13 +539,12 @@ function renderStockPipeline(){
   banner.setAttribute('aria-label','Deployment status');
   const statusHeading=node('div',undefined,'deployment-status-heading'),pipelineTitle=node('div',undefined,'pipeline-title'),titleLine=node('div',undefined,'pipeline-title-line');titleLine.append(node('h2','Package navigation'));pipelineTitle.append(titleLine);statusHeading.append(pipelineTitle);banner.append(statusHeading);
   const scoped=reports.filter(r=>r.definition_owner),focus=scoped.reduce((a,b)=>!a||b.timestamp>=a.timestamp?b:a,null),track=node('div',undefined,'deployment-package-track');track.setAttribute('aria-label','Packages in bundle order');
-  const activePackages=new Set(running&&!limited?state.packages.filter(p=>p.status==='deploying').map(p=>p.id):[]);
-  if(!activePackages.size&&running&&!limited&&focus)activePackages.add(focus.definition_owner.package);
+  const activePackages=activePackageIds(state,reports),concurrent=['parallel','concurrent'].includes(state.mode)||activePackages.size>1;
   let confirmedTotal=0,inferredTotal=0,unknownTotal=0;
-  const packageSummaries=new Map(),connected=showPackageConnectors(packageLayout,state.mode,activePackages.size,state.packages.length);track.dataset.connected=String(connected);
+  const packageSummaries=new Map(),connected=sequentialCli(state,reports)&&showPackageConnectors(packageLayout,state.mode,activePackages.size,state.packages.length);track.dataset.connected=String(connected);track.dataset.concurrent=String(concurrent);
   for(const p of state.packages){
     const own=reports.filter(r=>r.definition_owner?.package===p.id),components=p.attempts.slice(-1)[0]?.execution?.components||[],outcomes=[];
-    for(const component of components)for(const items of groupedSteps(own.filter(r=>r.definition_owner.component===component.id)).values())outcomes.push(reportedStepState(items,component,state.checks,running&&!limited,items.includes(latest)));
+    for(const component of components)for(const items of groupedSteps(own.filter(r=>r.definition_owner.component===component.id)).values())outcomes.push(reportedStepState(items,component,state.checks,running&&!limited,currentStep(items,component)));
     const confirmed=outcomes.filter(s=>s.state==='succeeded'&&!s.inferred).length,inferred=outcomes.filter(s=>s.state==='succeeded'&&s.inferred).length,unverified=outcomes.filter(s=>s.state==='unknown').length,failed=p.status==='failed'||own.some(r=>r.message==='action failed'||r.kind==='deployment.error'),active=activePackages.has(p.id);
     confirmedTotal+=confirmed;inferredTotal+=inferred;unknownTotal+=unverified;
     const appearance=reportedPackageState(p,own,active),result=appearance.state,item=node('button',undefined,'deployment-package '+result),label=node('span',undefined,'deployment-package-label'),caption=node('span',undefined,'deployment-package-caption');
@@ -449,11 +564,22 @@ function renderStockPipeline(){
   track.dataset.layout=packageLayout;track.setAttribute('role','group');
   const layouts=node('div',undefined,'pipeline-layout-toggle');layouts.setAttribute('role','group');layouts.setAttribute('aria-label','Package layout');
   for(const mode of ['pipeline','list']){const button=node('button',title(mode));button.type='button';button.dataset.focusKey='package-layout:'+mode;button.setAttribute('aria-pressed',String(packageLayout===mode));button.onclick=()=>{packageLayout=mode;canvas.dataset.stockKey='';render();};layouts.append(button);}titleLine.append(layouts);
+  if(concurrent)banner.append(node('p','Concurrent mode · '+activePackages.size+' packages active · no dependency arrows','concurrency-note'));
   banner.append(track);
   const actions=node('div',undefined,'session-view-actions');
-  const output=node('button',limited?'View available output':'View CLI output','session-output-button');output.dataset.focusKey='session-output';output.onclick=()=>openOutput('session-output','Session');actions.append(output);statusHeading.append(actions);
-  const activity=currentCliActivity(state);
-  if(activity){const pane=node('section',undefined,'current-cli-activity '+activity.state);pane.setAttribute('aria-label','Current CLI activity');const heading=node('div',undefined,'current-cli-heading');heading.append(node('span','Current CLI activity','current-cli-label'));if(activity.state==='running')heading.append(stepIcon('running'));heading.append(node('strong',activity.label));const r=activity.report;if(r){const owner=r.definition_owner||{},context=[...new Set([owner.package,owner.component].filter(Boolean))].join(' / ');if(context)heading.append(node('span',context,'current-cli-context'));const canLocate=Object.values(NAVIGATION_MESSAGES).includes(r.kind)&&r.resource,link=node('button',canLocate?'Go to logs':'View output','current-cli-log-link');link.onclick=()=>openOutput('current-cli-report','Current activity',canLocate?{items:[{...r,first_log_id:r.log_id||r.first_log_id}],label:activity.label}:null);heading.append(link);}pane.append(heading,node('p',activity.detail+(r?.resource?' · '+r.resource:''),'current-cli-report'));pane.title='Latest captured SDK activity, not an independently verified resource-health result.';canvas.append(pane);}
+  const output=node('button',limited?'View available logs':'View all logs','session-output-button');output.title='Open the full captured deployment output without jumping to an activity';output.dataset.focusKey='session-output';output.onclick=()=>openOutput('session-output','Session');actions.append(output);statusHeading.append(actions);
+  const lanes=node('div',undefined,'cli-activity-lanes');lanes.dataset.parallel=String(activePackages.size>1);
+  if(activePackages.size>1)lanes.append(node('h2','Parallel activity · '+activePackages.size+' packages active','parallel-activity-heading'));
+  for(const activity of activityOverviews(state,reports)){
+    const pane=node('section',undefined,'cli-activity-card '+(activity.ended?'last-cli-activity':'current-cli-activity')+' '+activity.state),heading=node('div',undefined,'current-cli-heading');pane.dataset.activityPackage=activity.report?.definition_owner?.package||'';
+    pane.setAttribute('aria-label',activity.ended?'Last CLI activity':'Current CLI activity');
+    heading.append(node('span',activity.ended?'Last activity':'Live activity','current-cli-label'),stepIcon(activity.state),node('strong',(activity.context?activity.context+' / ':'')+activity.label),durationNode(activity.timing));
+    const r=activity.report,locate=r&&([r.log_id,r.first_log_id].some(id=>Number.isSafeInteger(id)&&id>0)||Object.values(NAVIGATION_MESSAGES).includes(r.kind)&&r.resource);
+    const link=node('button',locate?'Jump to activity':limited?'View available logs':'View all logs','current-cli-log-link');link.title=locate?'Jump to the log line for this reported activity':'No exact activity line is available; open the captured deployment output';
+    link.onclick=()=>openOutput('current-cli-report','Current activity',locate?{items:[{...r,first_log_id:Number.isSafeInteger(r.log_id)&&r.log_id>0?r.log_id:r.first_log_id}],label:activity.label}:null);
+    heading.append(link);pane.append(heading,node('p',activity.detail,'current-cli-report'));pane.title='SDK-reported activity; inferred completion remains explicitly identified in the evidence.';lanes.append(pane);
+  }
+  if(lanes.childElementCount)canvas.append(lanes);
   canvas.append(banner);
   if(errors.length){
     const lastError=errors.reduce((a,b)=>b.timestamp>a.timestamp?b:a),warning=node('div',undefined,'cli-error-summary');warning.setAttribute('role','status');
@@ -474,7 +600,8 @@ function renderStockPipeline(){
     if(!disclosure.has(disclosureKey)&&active)section.open=true;
     if(!running&&quietFinished&&!finishedViews.has(state.id)&&!manualPackages.has(disclosureKey)){const summary=packageSummaries.get(p.id);section.open=!quietPackageEligible(summary);disclosure.set(disclosureKey,section.open);}
     const choiceKey=state.id+'/'+p.id,lastComponent=own.reduce((a,b)=>b.definition_owner.component&&(!a||b.timestamp>a.timestamp)?b:a,null)?.definition_owner.component;
-    const activeComponent=active?(latest?.definition_owner?.package===p.id?latest.definition_owner.component:components.find(c=>c.observed&&c.status==='running')?.id):null;
+    const explicitActive=components.filter(c=>c.observed&&c.status==='running');
+    const activeComponent=active?(explicitActive.find(c=>c.id===lastComponent)?.id||explicitActive[0]?.id||lastComponent):null;
     const preferred=componentChoices.get(choiceKey)||activeComponent||lastComponent;
     const chosen=components.some(c=>c.id===preferred)?preferred:components.length===1?components[0].id:null;
     const heading=node('summary',undefined,'package-execution-heading');heading.dataset.focusKey='package-disclosure:'+p.id;
@@ -486,41 +613,36 @@ function renderStockPipeline(){
     else if(active)heading.append(node('span',activeComponent?'Running · '+activeComponent:'Running','package-observation active'));
     else if(packageSummaries.get(p.id).appearance.inferred){const done=node('span','Done','package-observation succeeded');done.title=packageSummaries.get(p.id).appearance.evidence;heading.append(done);}
     else heading.append(node('span',own.length?'Result not reported':'Not reported','package-observation'));
+    heading.append(durationNode(scopeTiming('package.start',p.id,p.id,reports,state,active,p)));
     const summary=packageSummaries.get(p.id);if(summary.observed){const counts=node('span',(summary.confirmed+summary.inferred)+' '+(summary.confirmed+summary.inferred===1?'step':'steps')+' completed'+(summary.unverified?' · '+summary.unverified+' unknown':''),'package-step-summary');counts.title=summary.confirmed+' reported/verified · '+summary.inferred+' inferred from sequential CLI advancement. Not a completion percentage.';heading.append(counts);}
     section.append(heading);
     const info=p.artifact_info||{},artifact=node('div',undefined,'package-artifact'),version=node('span',info.version||p.version.split('@')[0],'package-version');version.title=info.reference||'Package version';artifact.append(version);
     if(info.has_yaml){const configLabel=info.kind==='ZarfInitConfig'?'Zarf init config':'Zarf package config',yaml=node('button',configLabel,'package-yaml');yaml.setAttribute('aria-label','View '+configLabel);yaml.dataset.focusKey='package-yaml:'+p.id;yaml.onclick=event=>{event.preventDefault();event.stopPropagation();showDefinition(p.id);};artifact.append(yaml);}
+    heading.insertBefore(artifact,heading.querySelector('.package-observation'));
     if(components.length){
-      const board=node('div',undefined,'component-progress-board'),boardHeading=node('div',undefined,'component-progress-heading');board.hidden=components.length===1;const boardLabel=node('h3');boardLabel.append(node('span','Components','hierarchy-pill'));boardHeading.append(boardLabel,artifact);
+      const board=node('div',undefined,'component-progress-board'),boardHeading=node('div',undefined,'component-progress-heading');board.hidden=components.length===1;const boardLabel=node('h3');boardLabel.append(node('span','Components','hierarchy-pill'));boardHeading.append(boardLabel);
       if(active&&componentChoices.has(choiceKey)){const follow=node('button','Follow current component','follow-component');follow.dataset.focusKey='component-follow:'+p.id;follow.onclick=()=>{componentChoices.delete(choiceKey);canvas.dataset.stockKey='';render();};boardHeading.append(follow);}
-      board.append(boardHeading);const list=node('div',undefined,'component-progress-list'),scrollKey=state.id+'/component-progress/'+p.id;list.dataset.scrollKey=scrollKey;list.dataset.choiceKey=choiceKey;list.setAttribute('aria-label',p.name+' component activity');
+      const columns=node('div',undefined,'component-overview-columns');for(const text of ['Component','Current / last operation','Status','Elapsed'])columns.append(node('span',text));
+      board.append(boardHeading,columns);const list=node('div',undefined,'component-progress-list'),scrollKey=state.id+'/component-progress/'+p.id;list.dataset.scrollKey=scrollKey;list.dataset.choiceKey=choiceKey;list.setAttribute('aria-label',p.name+' component activity');
       for(const component of components){
-        const componentReports=own.filter(r=>r.definition_owner.component===component.id),current=activeComponent===component.id,row=node('button',undefined,'component-progress-row'+(current?' is-current':'')),jobs=node('span',undefined,'component-progress-jobs');
-        row.dataset.componentProgress=component.id;row.dataset.componentChoice=component.id;row.dataset.focusKey='component-inspect:'+p.id+':'+component.id;row.setAttribute('aria-label','Inspect '+p.name+' / '+component.id);row.setAttribute('aria-pressed',String(component.id===chosen));row.setAttribute('aria-controls',state.id+'/component-detail/'+p.id+'/'+component.id);row.title='Inspect component activity and packaged resources';row.append(node('strong',component.id,'component-progress-name'));
-        const componentKey=state.id+'/component-detail/'+p.id+'/'+component.id,expanded=component.id===chosen&&(disclosure.get(componentKey)??true),groups=[...groupedSteps(componentReports).values()];row.dataset.compact=String(expanded);
-        if(expanded&&groups.length){
-          const outcomes=groups.map(items=>reportedStepState(items,component,state.checks,state.status==='deploying'&&state.source.output_complete!==false,items.includes(latest))),counts={succeeded:0,running:0,failed:0,unknown:0};for(const outcome of outcomes)counts[outcome.state]++;
-          jobs.classList.add('component-counts');jobs.append(node('span',groups.length+' observed '+(groups.length===1?'step':'steps')));
-          for(const [kind,label] of [['succeeded','completed'],['running','running'],['failed','failed'],['unknown','unknown']])if(counts[kind])jobs.append(node('span',counts[kind]+' '+label,'component-step-count '+kind));
-          jobs.title=outcomes.filter(o=>o.state==='succeeded'&&!o.inferred).length+' reported/verified · '+outcomes.filter(o=>o.inferred).length+' inferred completed steps. Observed activity only, not a whole-component result.';
-        }else for(const items of groups){
-          const appearance=reportedStepState(items,component,state.checks,state.status==='deploying'&&state.source.output_complete!==false,items.includes(latest)),text=describe(items,component),job=node('span',undefined,'component-progress-step '+appearance.state);
-          job.title=text.action+(text.target?' · '+text.target:'')+' — '+appearance.evidence;if(jobs.childElementCount){const arrow=node('span','→','component-step-connector');arrow.setAttribute('aria-hidden','true');job.append(arrow);}job.append(stepIcon(appearance.state),node('span',text.action));jobs.append(job);
-        }
-        if(!jobs.childElementCount){if(current&&!expanded)jobs.append(stepIcon('running'));jobs.append(node('span',componentReports.length?'Start reported; no step result yet':'Not reported','component-progress-empty'));}
-        row.append(jobs);if(current){row.append(node('span','Current','component-progress-current'));}
-        row.onclick=()=>{manualPackages.add(disclosureKey);componentChoices.set(choiceKey,component.id);setDisclosure(componentKey,true);canvas.dataset.stockKey='';render();canvas.querySelector('[data-package="'+CSS.escape(p.id)+'"] [data-component="'+CSS.escape(component.id)+'"]').scrollIntoView({block:'nearest'});};list.append(row);
+        const componentReports=own.filter(r=>r.definition_owner.component===component.id),notSelected=componentNotSelected(component,componentReports),current=active&&(activeComponent===component.id||component.observed&&component.status==='running'),row=node('button',undefined,'component-progress-row'+(current?' is-current':'')),jobs=node('span',undefined,'component-progress-jobs');
+        row.dataset.componentSelection=notSelected?'not-selected':'expected';
+        row.dataset.componentProgress=component.id;row.dataset.componentChoice=component.id;row.dataset.focusKey='component-inspect:'+p.id+':'+component.id;row.setAttribute('aria-label',(notSelected?'Explain Not selected for ':'Inspect ')+p.name+' / '+component.id);if(notSelected)row.setAttribute('aria-haspopup','dialog');row.setAttribute('aria-pressed',String(component.id===chosen));row.setAttribute('aria-controls',state.id+'/component-detail/'+p.id+'/'+component.id);row.title=notSelected?'Explain what Not selected means':'Inspect component activity and packaged resources';row.append(node('strong',component.id,'component-progress-name'));
+        const componentKey=state.id+'/component-detail/'+p.id+'/'+component.id,overview=componentOverview(component,componentReports,state,reports,current),summary=node('span',undefined,'component-progress-summary'+(notSelected?'':' component-progress-step')+' '+overview.state);
+        summary.title=overview.evidence||'';summary.append(stepIcon(overview.state),node('span',notSelected?'Not selected':overview.operation,'component-current-operation'));jobs.append(summary);
+        const badge=node('span',notSelected?'':overview.label,'component-overview-state '+overview.state);if(notSelected)badge.setAttribute('aria-hidden','true');
+        row.append(jobs,badge,durationNode(notSelected?{}:scopeTiming('component.start',component.id,p.id,reports,state,current,component)));
+        row.onclick=()=>{manualPackages.add(disclosureKey);componentChoices.set(choiceKey,component.id);setDisclosure(componentKey,true);canvas.dataset.stockKey='';render();canvas.querySelector('[data-package="'+CSS.escape(p.id)+'"] [data-component="'+CSS.escape(component.id)+'"]').scrollIntoView({block:'nearest'});if(notSelected)showNotSelected();};list.append(row);
       }
       list.onscroll=()=>{if(list.isConnected&&list.clientHeight)flowScroll.set(scrollKey,list.scrollTop);};board.append(list);section.append(board);
-      requestAnimationFrame(()=>restoreComponentScroll(list));if(components.length===1)heading.insertBefore(artifact,heading.querySelector('.package-observation'));
+      requestAnimationFrame(()=>restoreComponentScroll(list));
     }
-    else{const meta=node('div',undefined,'package-info');meta.append(artifact);section.append(meta);}
     if(components.length&&!chosen)section.append(node('p','Select a component above to inspect its activity and packaged resources.','component-selection-hint'));
     for(const component of components){
       const componentKey=state.id+'/component-detail/'+p.id+'/'+component.id,row=node('details',undefined,'component-execution');row.dataset.component=component.id;row.hidden=component.id!==chosen;row.dataset.disclosure=componentKey;row.open=components.length===1?true:disclosure.has(componentKey)?disclosure.get(componentKey):true;row.dataset.inline=String(components.length===1);
       const expandedAtRender=row.open;row.ontoggle=()=>{if(row.isConnected){disclosure.set(componentKey,row.open);if(component.id===chosen&&row.open!==expandedAtRender){manualPackages.add(disclosureKey);canvas.dataset.stockKey='';render();}}};
       row.id=componentKey;row.setAttribute('aria-label',p.name+' / '+component.id+' activity');const componentHeading=node('summary',undefined,'component-detail-heading');componentHeading.append(node('span','Component','hierarchy-pill'),node('span',component.id,'component-name'));componentHeading.hidden=components.length===1;row.append(componentHeading);
-      if(components.length===1){const identity=node('div',undefined,'component-identity');identity.append(node('span','Component','hierarchy-pill'),node('span',component.id,'component-name'));row.append(identity);}
+      if(components.length===1){const identity=node('div',undefined,'component-identity');identity.append(node('span','Component','hierarchy-pill'),node('span',component.id,'component-name'),durationNode(scopeTiming('component.start',component.id,p.id,reports,state,active&&activeComponent===component.id,component)));row.append(identity);}
       const content=node('div',undefined,'component-activity');
       const resourceKey=state.id+'/resources/'+p.id+'/'+component.id,declared=component.artifact_info||{},resourcesInfo=node('details',undefined,'component-resources');
       resourcesInfo.dataset.disclosure=resourceKey;resourcesInfo.open=disclosure.get(resourceKey)||false;const resourcesInitiallyOpen=resourcesInfo.open;resourcesInfo.ontoggle=()=>{if(resourcesInfo.isConnected){disclosure.set(resourceKey,resourcesInfo.open);if(resourcesInfo.open&&!resourcesInitiallyOpen)manualPackages.add(disclosureKey);}};
@@ -561,14 +683,6 @@ function renderStockPipeline(){
     canvas.append(section);
   }
   if(!running)finishedViews.add(state.id);
-  const info=node('details',undefined,'session-details');info.dataset.disclosure='session-details';info.open=opened.has('session-details');info.append(node('summary','Session details'));
-  const meta=node('dl',undefined,'session-metadata');
-  const fields=[['Process',state.source.pid?'PID '+state.source.pid:'Task-owned capture'],['Output',state.source.note]];
-  if(state.source.kind==='stock-process'&&state.completed_at)fields.push(['Result','Process ended. Its exit code is unavailable to this watcher; check the deployment terminal.']);
-  if(!running&&latest)fields.push(['Last reported activity',latest.message+(latest.resource?' · '+latest.resource:'')]);
-  for(const [name,value]of fields)meta.append(node('dt',name),node('dd',value));info.append(meta);
-  info.append(node('p','Done can be inferred when the same sequential CLI advances without a reported error. Hover a step for its evidence. Process disappearance is not success; Kubernetes checks remain separate observations.','session-notes'));
-  canvas.append(info);
 }
 function renderPipeline(){
   $('jobs-total').textContent=state.packages.length;
@@ -708,6 +822,7 @@ function render(){
   const executionKey=runs.map(r=>r.id+':'+r.status).join('|');if($('operation-run').dataset.optionsKey!==executionKey){$('operation-run').replaceChildren(node('option','All internal executions'));$('operation-run').firstChild.value='';for(const [i,item]of runs.entries()){const o=node('option',`${state.pipeline.operation_labels[item.kind]||item.kind} · execution ${i+1} · ${item.status}`);o.value=item.id;$('operation-run').append(o);}$('operation-run').dataset.optionsKey=executionKey;}$('operation-run').value=operationFilter||'';
   renderActivity();updateLogNavigation();
   updateLogCount();
+  updateDurations();
   if(focus){const el=[...document.querySelectorAll('[data-focus-key]')].find(e=>e.dataset.focusKey===focus);if(el&&document.activeElement===document.body)el.focus({preventScroll:true});}
 }
 function renderComponents(x){
@@ -881,13 +996,13 @@ if(liveOnly){
   $('history-empty').querySelector('h2').textContent='Ready to watch a deployment';
   $('history-empty').querySelector('p').textContent='With capture setup enabled, open a new terminal and run your usual uds deploy command. This viewer does not start deployments.';
   $('log-status').textContent='Original output retained.';
-  document.title='UDS · Local watcher';
+  document.title='UDS Deploy Portal';
 }
-$('nav-deployments').onclick=$('breadcrumb-home').onclick=()=>showPage('history',true);
+$('nav-deployments').onclick=$('breadcrumb-home').onclick=$('current-tasks').onclick=()=>showPage('history',true);
 $('nav-pipeline').onclick=()=>{if(state)showPage('pipeline',true);};
 $('deployment-search').oninput=renderHistory;$('deployment-status').onchange=renderHistory;
 for(const [id,mode]of [['stage-grouping','stages'],['dependency-grouping','dependencies']])$(id).onclick=()=>{grouping=mode;renderPipeline();};
-window.addEventListener('popstate',()=>{const id=new URL(location.href).searchParams.get('deployment');if(id){if(id===run&&state)showPage('pipeline');else chooseRun(id,false);}else showPage('history');});
+window.addEventListener('popstate',()=>{const id=new URL(location.href).searchParams.get('deployment');if(id){autoFollowRuns=isActiveRun(discoveredRuns.find(r=>r.id===id));if(id===run&&state)showPage('pipeline');else chooseRun(id,false);}else showPage('history');});
 $('history').onchange=()=>chooseRun($('history').value);$('active-run').onclick=()=>{if(activeRunId)chooseRun(activeRunId);};
 $('activity-view').onclick=()=>{rawMode=false;render();};$('raw-view').onclick=()=>{rawMode=true;render();};
 $('attempt').onchange=()=>{attempt=$('attempt').value;autoAttempt=false;clearScope();render();loadLogs().catch(e=>notice(e.message));};
@@ -911,4 +1026,4 @@ new ResizeObserver(scheduleWires).observe($('packages'));
 for(const id of ['logs','activity-feed'])$(id).addEventListener('wheel',()=>{const box=$(id);if(box.scrollTop+box.clientHeight<box.scrollHeight-40)$('follow').checked=false;},{passive:true});
 $('follow').onchange=()=>{if($('follow').checked){if(logHistory||pausedNew)loadLogs().catch(e=>notice(e.message));else{const box=$(rawMode?'logs':'activity-feed');box.scrollTop=box.scrollHeight;}}};
 window.addEventListener('online',()=>{if(state){refreshState();if($('follow').checked)loadLogs().catch(e=>notice(e.message));}});
-setInterval(()=>{if(pageView==='history')renderHistory();else if(state)render();},1000);setInterval(discover,5000);discover();
+setInterval(()=>{if(pageView==='history')renderHistory();else if(state)render();},1000);setInterval(discover,liveOnly?1000:5000);discover();
