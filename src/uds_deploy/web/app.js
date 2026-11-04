@@ -243,11 +243,12 @@ function scopeTiming(kind,id,packageId,reports,snapshot,active,record){
 }
 function componentOverview(component,items,snapshot,reports,active){
   if(componentNotSelected(component,items))return {state:'not-selected',label:'Not selected',operation:'Optional component',timing:{},evidence:component.selection_evidence};
+  if(!active&&!items.length&&component?.expected===true&&component.status==='pending'&&!component.started_at&&['waiting','deploying'].includes(snapshot.status)&&snapshot.source?.activity_available!==false&&sequentialCli(snapshot,reports)&&!reports.some(r=>r.kind==='component.start'&&!r.definition_owner?.component))return {state:'pending',label:'Pending',operation:'—',evidence:'Component has not started; no start was reported in the complete live deployment output'};
   const groups=[...operationGroups(items).values()],last=items.filter(r=>r.kind!=='component.start').reduce((a,b)=>!a||b.timestamp>a.timestamp?b:a,null);
   const outcomes=groups.map(group=>reportedStepState(group,component,snapshot.checks,false,false));
   const failed=items.some(r=>r.kind==='deployment.error'||r.message==='action failed')||outcomes.some(outcome=>outcome.state==='failed');
   const status=failed?'failed':active?'running':groups.length&&outcomes.every(outcome=>outcome.state==='succeeded')?'succeeded':'unknown';
-  const label=status==='failed'?'Failed':status==='running'?'Running':status==='succeeded'?'Done':items.length?'Unconfirmed':'Not reported';
+  const label=status==='failed'?'Failed':status==='running'?'Running':status==='succeeded'?'Done':'Unknown';
   const appearance=last?reportedStepState(groups.find(group=>group.includes(last))||[last],component,snapshot.checks,active,true):null;
   return {state:status,label,operation:last?(active&&appearance?.state==='succeeded'?'Last: ':'')+operationLabel(last,appearance):items.length?'Start reported':'No activity reported',evidence:status==='succeeded'?'All observed steps completed; inspect steps for reported versus inferred evidence':appearance?.evidence||'No final result reported'};
 }
@@ -505,7 +506,8 @@ function renderStockPipeline(){
     if(!groups.size){
       const omitted=componentNotSelected(component,items),message=node(omitted?'button':'span',undefined,'unobserved-component'+(omitted?' selection-explanation':''));
       if(omitted){message.type='button';message.setAttribute('aria-haspopup','dialog');message.setAttribute('aria-controls','not-selected-dialog');message.onclick=showNotSelected;message.append(stepIcon('not-selected'));}
-      message.append(document.createTextNode(omitted?'Not selected by the packaged bundle; no deployment expected.':items.some(r=>r.kind==='component.start')?'Component start reported; no action result captured.':'No CLI activity captured for this component.'));rail.append(message);
+      const pending=componentOverview(component,items,state,reports,false).state==='pending';
+      message.append(document.createTextNode(omitted?'Not selected by the packaged bundle; no deployment expected.':pending?'Pending — this component has not started yet.':items.some(r=>r.kind==='component.start')?'Component start reported; no action result captured.':'Activity could not be determined from the captured output.'));rail.append(message);
     }
     const flow=node('div',undefined,'activity-flow');
     flow.append(rail);parent.append(flow);

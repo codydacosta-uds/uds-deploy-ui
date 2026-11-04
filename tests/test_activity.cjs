@@ -32,6 +32,14 @@ assert.equal(context.componentOverview(component,[upgrade,health],snapshot,repor
 assert.equal(context.componentOverview(component,[upgrade,health],snapshot,reports,true).state,'running');
 assert.equal(context.componentOverview(component,[action],snapshot,reports,false).state,'succeeded');
 assert.equal(context.componentOverview(component,[{...action,message:'action failed'}],snapshot,reports,true).state,'failed');
+const planned={id:'later',phases:[],status:'pending',expected:true};
+const pending=context.componentOverview(planned,[],snapshot,reports,false);assert.equal(pending.state,'pending');assert.equal(pending.label,'Pending');assert.equal(pending.operation,'—');
+for(const source of [{...snapshot.source,output_complete:false},{...snapshot.source,activity_available:false},{...snapshot.source,single_cli:false}])assert.equal(context.componentOverview(planned,[],{...snapshot,source},reports,false).label,'Unknown','Incomplete or ambiguous evidence is not Pending');
+assert.equal(context.componentOverview(planned,[],{...snapshot,status:'unknown',completed_at:200},reports,false).state,'unknown');
+assert.equal(context.componentOverview(planned,[],{...snapshot,mode:'concurrent'},reports,false).state,'unknown');
+assert.equal(context.componentOverview(planned,[],snapshot,[...reports,{kind:'component.start',resource:'later'}],false).state,'unknown','An unowned start may belong to this component');
+assert.notEqual(context.componentOverview(planned,[componentStart],snapshot,reports,false).state,'pending','Observed starts are not pending');
+assert.notEqual(context.componentOverview({...planned,started_at:100},[],snapshot,reports,false).state,'pending');
 const omitted={...component,expected:false,selection:'not-selected'};
 assert.equal(context.componentOverview(omitted,[],snapshot,reports,false).state,'not-selected');
 assert.notEqual(context.componentOverview(omitted,[componentStart],snapshot,reports,true).state,'not-selected');

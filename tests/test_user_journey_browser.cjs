@@ -27,6 +27,7 @@ async function until(test,message,timeout=25000){const deadline=Date.now()+timeo
   const card=page.locator('.package-execution').first();assert.equal(await card.locator('.component-execution:visible').getAttribute('data-component'),'prepare');assert.ok(await card.locator('.stock-job.running').count()>0);
   assert.ok(await card.locator('.component-progress-row[aria-pressed="true"] .component-progress-step.running').count()>0,'The selected active row keeps its running icon and step label');
   assert.equal(await card.locator('.component-counts').count(),0);
+  const pending=card.locator('[data-component-progress="verify"]');assert.equal(await pending.locator('.component-overview-state').innerText(),'Pending');assert.equal(await pending.locator('.component-current-operation').innerText(),'—');assert.equal(await pending.locator('.activity-duration').innerText(),'—');assert.equal(await pending.locator('.step-status-icon.running').count(),0,'Pending is neutral, not spinning');
   const skipped=card.locator('[data-component-progress="optional-not-selected"]');
   assert.equal(await skipped.getAttribute('data-component-selection'),'not-selected');assert.match(await skipped.innerText(),/Not selected/);
   assert.equal(await skipped.locator('.component-progress-step').count(),0,'Unselected inventory is neutral, not pending work');
