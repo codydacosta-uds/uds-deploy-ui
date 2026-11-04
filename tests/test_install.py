@@ -1,4 +1,4 @@
-"""Explicit installer tests: temporary homes and fake commands only."""
+"""Path-free shell setup tests: temporary homes and fake commands only."""
 import hashlib
 import json
 import os
@@ -22,126 +22,124 @@ class InstallTests(unittest.TestCase):
         self.files=[self.home/'.bashrc',self.home/'.profile',self.zdot/'.zshrc']
         for file in self.files:file.write_text('# existing configuration\n')
         for name in ('install.sh','uninstall.sh'):shutil.copy2(ROOT/name,self.checkout/name)
-        (self.checkout/'scripts').mkdir();shutil.copy2(ROOT/'scripts/task-capture.py',self.checkout/'scripts/task-capture.py')
-        self.project=self.root/'deployment repo';(self.project/'tasks').mkdir(parents=True)
-        self.task=self.project/'tasks/swf.yaml'
-        self.original_tasks='tasks:\n  - name: direct\n    actions:\n      - cmd: uds deploy bundle.tar.zst --confirm\n  - name: relative\n    actions:\n      - cmd: |\n          ./uds deploy bundle.tar.zst --confirm\n        shell:\n          linux: bash\n          darwin: bash\n'
-        self.task.write_text(self.original_tasks)
-        for path,label in [(self.checkout/'uds-watch','watcher'),(self.bin/'uds','native')]:
-            path.write_text('#!'+sys.executable+'\nimport json,os,sys\nprint(json.dumps({"command":'+repr(label)+',"args":sys.argv[1:]}))\nsys.exit(int(os.environ.get("UDS_TEST_EXIT","0")))\n');path.chmod(0o755)
+        watcher='''import json,os,sys
+if sys.argv[1:]==['capture']:
+    if os.environ.get('UDS_CAPTURE_FAIL'):sys.exit(1)
+    with open(os.environ['CAPTURE_TRACE'],'a') as stream:stream.write('capture\\n')
+    sys.stdout.buffer.write(sys.stdin.buffer.read());sys.exit(0)
+print(json.dumps({'command':'watcher','args':sys.argv[1:]}))
+sys.exit(int(os.environ.get('UDS_TEST_EXIT','0')))
+'''
+        native='''import json,os,signal,sys
+print(json.dumps({'command':'native','args':sys.argv[1:]}),flush=True)
+if os.environ.get('UDS_TEST_STDERR'):print('native stderr',file=sys.stderr,flush=True)
+if os.environ.get('UDS_TEST_SIGNAL'):
+    signal.signal(signal.SIGINT,signal.SIG_DFL);os.kill(os.getpid(),signal.SIGINT)
+sys.exit(int(os.environ.get('UDS_TEST_EXIT','0')))
+'''
+        for path,body in [(self.checkout/'uds-watch',watcher),(self.bin/'uds',native)]:
+            path.write_text('#!'+sys.executable+'\n'+body);path.chmod(0o755)
         self.env={key:value for key,value in os.environ.items() if key in ('PATH','TMPDIR','LANG','LC_ALL')}
-        self.env.update(HOME=str(self.home),ZDOTDIR=str(self.zdot),PATH=str(self.bin)+os.pathsep+self.env.get('PATH',os.defpath),UDS_DEPLOY_RUNTIME_DIR=str(self.root/'runtime'))
+        self.env.update(HOME=str(self.home),ZDOTDIR=str(self.zdot),PATH=str(self.bin)+os.pathsep+self.env.get('PATH',os.defpath),UDS_DEPLOY_RUNTIME_DIR=str(self.root/'runtime'),CAPTURE_TRACE=str(self.root/'capture-calls'))
 
-    def install(self):
-        return subprocess.run(['bash',str(self.checkout/'install.sh'),str(self.project)],cwd=self.cwd,env=self.env,capture_output=True,text=True,timeout=10)
+    def setup_command(self,name,*args):
+        return subprocess.run(['bash',str(self.checkout/name),*args],cwd=self.cwd,env=self.env,capture_output=True,text=True,timeout=10)
 
-    def uninstall(self):
-        return subprocess.run(['bash',str(self.checkout/'uninstall.sh'),str(self.project)],cwd=self.cwd,env=self.env,capture_output=True,text=True,timeout=10)
-
-    def invoke(self,shell,args,code=0):
-        env=dict(self.env,UDS_TEST_EXIT=str(code))
+    def invoke(self,shell,args,code=0,**extra):
+        env=dict(self.env,UDS_TEST_EXIT=str(code),**extra)
         if shell=='bash':command=[shutil.which(shell),'--noprofile','--norc','-c','. "$HOME/.bashrc"; uds "$@"','probe']
         else:command=[shutil.which(shell),'-dfc','. "$ZDOTDIR/.zshrc"; uds "$@"','probe']
         return subprocess.run(command+args,cwd=self.cwd,env=env,capture_output=True,text=True,timeout=10)
 
-    def test_install_is_idempotent_and_preserves_configuration_and_native_binary(self):
+    def shells(self):return [shell for shell in ('bash','zsh') if shutil.which(shell)]
+
+    def real_launcher(self):
+        shutil.copy2(ROOT/'uds-watch',self.checkout/'uds-watch')
+        (self.checkout/'src').symlink_to(ROOT/'src',target_is_directory=True)
+
+    def test_install_is_path_free_idempotent_and_leaves_tasks_and_binary_alone(self):
+        task=self.cwd/'tasks.yaml';task.write_text('tasks: []\n')
         before=hashlib.sha256((self.bin/'uds').read_bytes()).digest()
-        first=self.install();self.assertEqual(first.returncode,0,first.stderr)
-        launcher=self.home/'.local/bin/uds-watch'
-        self.assertTrue(launcher.is_symlink());self.assertEqual(launcher.resolve(),(self.checkout/'uds-watch').resolve())
-        installed={file:file.read_bytes() for file in self.files+[self.task]}
-        self.assertEqual(self.task.read_text().count('"$HOME/.local/bin/uds-watch" capture'),2)
-        second=self.install();self.assertEqual(second.returncode,0,second.stderr)
-        for file,content in installed.items():
-            self.assertEqual(file.read_bytes(),content)
-            if file!=self.task:
-                self.assertTrue(content.startswith(b'# existing configuration\n'))
-                self.assertEqual(content.count(b'# >>> uds-watch shortcut >>>'),1)
-        self.assertFalse((self.home/'.bash_profile').exists(),'Do not shadow an existing .profile')
+        result=self.setup_command('install.sh');self.assertEqual(result.returncode,0,result.stderr)
+        launcher=self.home/'.local/bin/uds-watch';self.assertTrue(launcher.is_symlink())
+        self.assertEqual(launcher.resolve(),(self.checkout/'uds-watch').resolve())
+        installed={file:file.read_bytes() for file in self.files}
+        self.assertEqual(self.setup_command('install.sh').returncode,0)
+        for file,data in installed.items():
+            self.assertEqual(file.read_bytes(),data);self.assertTrue(data.startswith(b'# existing configuration\n'))
+            self.assertEqual(data.count(b'# >>> uds-watch shortcut >>>'),1)
+        self.assertFalse((self.home/'.bash_profile').exists());self.assertEqual(task.read_text(),'tasks: []\n')
         self.assertEqual(hashlib.sha256((self.bin/'uds').read_bytes()).digest(),before)
 
-    def test_bash_and_zsh_route_arguments_and_exit_codes_without_recursion(self):
-        self.assertEqual(self.install().returncode,0)
-        for shell in ('bash','zsh'):
-            if not shutil.which(shell):continue
-            for args,expected in [([],('native',[])),(['deploy','a path',''],('native',['deploy','a path',''])),(['watch'],('watcher',[])),(['watch','--port','0','a path',''],('watcher',['--port','0','a path',''])),(['watch','capture'],('watcher',['capture']))]:
+    def test_bash_zsh_route_arguments_capture_deploy_and_preserve_exit_status(self):
+        self.assertEqual(self.setup_command('install.sh').returncode,0)
+        cases=[([],('native',[])),(['version'],('native',['version'])),(['deploy','a path',''],('native',['deploy','a path',''])),(['d','a path'],('native',['d','a path'])),(['watch'],('watcher',[])),(['watch','--port','0','a path',''],('watcher',['--port','0','a path','']))]
+        for shell in self.shells():
+            for args,expected in cases:
                 for code in (0,7):
                     with self.subTest(shell=shell,args=args,code=code):
                         result=self.invoke(shell,args,code);self.assertEqual(result.returncode,code,result.stderr)
                         self.assertEqual(json.loads(result.stdout),dict(command=expected[0],args=expected[1]))
+        self.assertEqual((self.root/'capture-calls').read_text().count('capture\n'),len(self.shells())*4)
 
-    def test_real_launcher_works_from_another_directory(self):
-        shutil.copy2(ROOT/'uds-watch',self.checkout/'uds-watch')
-        (self.checkout/'src').symlink_to(ROOT/'src',target_is_directory=True)
-        self.assertEqual(self.install().returncode,0)
-        for shell in ('bash','zsh'):
-            if not shutil.which(shell):continue
-            result=self.invoke(shell,['watch','--help'])
-            self.assertEqual(result.returncode,0,result.stderr);self.assertIn('read-only UDS/Zarf deployment viewer',result.stdout)
+    def test_real_launcher_and_capture_work_outside_the_checkout(self):
+        self.real_launcher();self.assertEqual(self.setup_command('install.sh').returncode,0)
+        for shell in self.shells():
+            help_result=self.invoke(shell,['watch','--help']);self.assertEqual(help_result.returncode,0,help_result.stderr)
+            self.assertIn('read-only UDS/Zarf deployment viewer',help_result.stdout)
+            for code in (0,7):
+                env=dict(self.env,UDS_TEST_EXIT=str(code),UDS_TEST_STDERR='1')
+                expected=subprocess.run([str(self.bin/'uds'),'deploy','a path',''],env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+                result=self.invoke(shell,['deploy','a path',''],code,UDS_TEST_STDERR='1')
+                self.assertEqual(result.returncode,code,result.stderr);self.assertEqual(result.stdout,expected.stdout)
 
-    def test_existing_unrelated_launcher_is_not_overwritten(self):
-        launcher=self.home/'.local/bin/uds-watch';launcher.parent.mkdir(parents=True);launcher.write_bytes(b'keep this executable\n')
-        result=self.install();self.assertNotEqual(result.returncode,0);self.assertIn('Refusing to replace',result.stderr)
-        self.assertEqual(launcher.read_bytes(),b'keep this executable\n')
-        self.assertTrue(all(file.read_text()=='# existing configuration\n' for file in self.files))
+    def test_capture_fallback_and_interrupt_preserve_native_result(self):
+        self.assertEqual(self.setup_command('install.sh').returncode,0)
+        for shell in self.shells():
+            failed=self.invoke(shell,['deploy','a path'],7,UDS_CAPTURE_FAIL='1')
+            self.assertEqual(failed.returncode,7);self.assertEqual(json.loads(failed.stdout)['command'],'native')
+            interrupted=self.invoke(shell,['deploy','a path'],UDS_TEST_SIGNAL='1')
+            self.assertEqual(interrupted.returncode,130,interrupted.stderr)
+
+    def test_install_updates_its_old_shortcut_block_without_duplicates(self):
+        self.assertEqual(self.setup_command('install.sh').returncode,0)
+        rc=self.files[0];data=rc.read_text();start=data.index('# >>> uds-watch shortcut >>>');end=data.index('# <<< uds-watch shortcut <<<')
+        rc.write_text(data[:start]+'# >>> uds-watch shortcut >>>\nuds() { command uds "$@"; }\n'+data[end:]+'# later user setting\n')
+        self.assertEqual(self.setup_command('install.sh').returncode,0)
+        updated=rc.read_text();self.assertEqual(updated.count('# >>> uds-watch shortcut >>>'),1)
+        self.assertIn('"$HOME/.local/bin/uds-watch" capture',updated);self.assertTrue(updated.endswith('# later user setting\n'))
 
     def test_uninstall_restores_existing_files_and_is_idempotent(self):
-        originals={file:file.read_bytes() for file in self.files}
-        self.assertEqual(self.install().returncode,0)
-        self.assertEqual(self.uninstall().returncode,0)
+        original={file:file.read_bytes() for file in self.files}
+        self.assertEqual(self.setup_command('install.sh').returncode,0)
+        self.assertEqual(self.setup_command('uninstall.sh').returncode,0)
         self.assertFalse((self.home/'.local/bin/uds-watch').is_symlink())
-        self.assertEqual({file:file.read_bytes() for file in self.files},originals)
-        self.assertEqual(self.uninstall().returncode,0)
-        self.assertEqual({file:file.read_bytes() for file in self.files},originals)
-        self.assertTrue((self.bin/'uds').is_file());self.assertEqual(self.task.read_text(),self.original_tasks)
+        self.assertEqual({file:file.read_bytes() for file in self.files},original)
+        self.assertEqual(self.setup_command('uninstall.sh').returncode,0)
+        self.assertEqual({file:file.read_bytes() for file in self.files},original)
 
-    def test_uninstall_keeps_later_user_settings_and_a_replaced_launcher(self):
-        self.assertEqual(self.install().returncode,0)
+    def test_uninstall_preserves_later_settings_and_replaced_launcher(self):
+        self.assertEqual(self.setup_command('install.sh').returncode,0)
         with self.files[0].open('ab') as stream:stream.write(b'export KEEP_THIS=1\n')
         launcher=self.home/'.local/bin/uds-watch';launcher.unlink();launcher.write_bytes(b'user replacement\n')
-        self.assertEqual(self.uninstall().returncode,0)
+        self.assertEqual(self.setup_command('uninstall.sh').returncode,0)
         self.assertEqual(self.files[0].read_bytes(),b'# existing configuration\nexport KEEP_THIS=1\n')
         self.assertEqual(launcher.read_bytes(),b'user replacement\n')
 
-    def test_installed_task_tee_preserves_native_output_and_exit_status(self):
-        shutil.copy2(ROOT/'uds-watch',self.checkout/'uds-watch');(self.checkout/'src').symlink_to(ROOT/'src',target_is_directory=True)
-        self.assertEqual(self.install().returncode,0)
-        lines=self.task.read_text().splitlines();start=next(i for i,line in enumerate(lines) if '# uds-watch capture' in line)
-        command='\n'.join(line.strip() for line in lines[start+1:start+3])
-        for code in (0,7):
-            env=dict(self.env,UDS_TEST_EXIT=str(code))
-            expected=subprocess.run([str(self.bin/'uds'),'deploy','bundle.tar.zst','--confirm'],env=env,capture_output=True)
-            result=subprocess.run(['bash','-c',command],cwd=self.project,env=env,capture_output=True,timeout=10)
-            self.assertEqual(result.returncode,code,result.stderr);self.assertEqual(result.stdout,expected.stdout)
-
-    def test_invalid_tasks_are_rejected_before_shell_setup(self):
-        self.task.write_text('tasks: []\n')
-        result=self.install();self.assertNotEqual(result.returncode,0)
-        self.assertFalse((self.home/'.local/bin/uds-watch').exists())
+    def test_unrelated_launcher_and_path_arguments_are_rejected(self):
+        self.assertNotEqual(self.setup_command('install.sh',str(self.cwd)).returncode,0)
+        launcher=self.home/'.local/bin/uds-watch';launcher.parent.mkdir(parents=True);launcher.write_bytes(b'keep this executable\n')
+        result=self.setup_command('install.sh');self.assertNotEqual(result.returncode,0);self.assertIn('Refusing to replace',result.stderr)
+        self.assertEqual(launcher.read_bytes(),b'keep this executable\n')
         self.assertTrue(all(file.read_text()=='# existing configuration\n' for file in self.files))
 
-    def test_uninstall_preserves_later_task_argument_changes(self):
-        self.assertEqual(self.install().returncode,0)
-        self.task.write_text(self.task.read_text().replace('--confirm','--confirm --force-conflicts'))
-        self.assertEqual(self.uninstall().returncode,0)
-        self.assertEqual(self.task.read_text(),self.original_tasks.replace('--confirm','--confirm --force-conflicts'))
-
-    def test_edited_capture_exit_is_not_silently_removed(self):
-        self.assertEqual(self.install().returncode,0)
-        self.task.write_text(self.task.read_text().replace('exit "${PIPESTATUS[0]}" # uds-watch capture','exit 0 # user edit'))
-        before={file:file.read_bytes() for file in self.files}
-        result=self.uninstall();self.assertNotEqual(result.returncode,0)
-        self.assertEqual({file:file.read_bytes() for file in self.files},before)
-        self.assertTrue((self.home/'.local/bin/uds-watch').is_symlink())
-
-    def test_default_startup_files_are_created(self):
+    def test_created_startup_files_are_removed_without_touching_tasks(self):
         for file in self.files:file.unlink()
-        self.env.pop('ZDOTDIR')
-        self.assertEqual(self.install().returncode,0)
-        for name in ('.bashrc','.bash_profile','.zshrc'):
-            self.assertEqual((self.home/name).read_text().count('# >>> uds-watch shortcut >>>'),1)
-        self.assertEqual(self.uninstall().returncode,0)
+        self.env.pop('ZDOTDIR');task=self.cwd/'tasks.yaml';task.write_text('keep these tasks\n')
+        self.assertEqual(self.setup_command('install.sh').returncode,0)
+        self.assertEqual(self.setup_command('uninstall.sh').returncode,0)
         self.assertTrue(all(not (self.home/name).exists() for name in ('.bashrc','.bash_profile','.zshrc')))
+        self.assertEqual(task.read_text(),'keep these tasks\n')
 
 
 if __name__=='__main__':unittest.main()

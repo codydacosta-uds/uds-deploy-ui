@@ -67,17 +67,20 @@ class UserJourneyTests(unittest.TestCase):
                     command=shlex.join([str(root/'bin/uds')]+args)+' 2>&1 | ('+shlex.join([sys.executable,str(helper)])+' || cat); exit "${PIPESTATUS[0]}"'
                     (root/'tasks.yaml').write_text(json.dumps({'tasks':[{'name':'deploy-probe','actions':[{'cmd':command,'shell':{'linux':'bash','darwin':'bash'}}]}]}))
                 else:
-                    (root/'uds').symlink_to(uds)
-                    plain='tasks:\n  - name: deploy-probe\n    actions:\n      - cmd: '+shlex.join(['./uds']+args)+'\n'
-                    (root/'tasks.yaml').write_text(plain)
-                    installed=subprocess.run([str(ROOT/'install.sh'),str(root/'tasks.yaml')],env=env,capture_output=True,timeout=10)
+                    plain='tasks: []\n';(root/'tasks.yaml').write_text(plain)
+                    installed=subprocess.run([str(ROOT/'install.sh')],cwd=root,env=env,capture_output=True,timeout=10)
                     self.assertEqual(installed.returncode,0,installed.stderr.decode(errors='replace'))
-                    self.assertIn('"$HOME/.local/bin/uds-watch" capture',(root/'tasks.yaml').read_text())
+                    self.assertEqual((root/'tasks.yaml').read_text(),plain)
                 terminal=root/'terminal.log';expected=root/'native-output.log';event=root/'browser-event.json';viewer_log=root/'viewer.log'
                 task=viewer=driver=None;gold=None
                 try:
                     with terminal.open('wb') as console:
-                        task=subprocess.Popen([binary,'-c','exec "$@"','journey',str(root/'bin/uds'),'--log-level','info','--no-progress','run','deploy-probe'],cwd=root,env=env,stdin=subprocess.DEVNULL,stdout=console,stderr=subprocess.STDOUT,start_new_session=True)
+                        if sonic:launch=[binary,'-c','exec "$@"','journey',str(root/'bin/uds'),'--log-level','info','--no-progress','run','deploy-probe']
+                        else:
+                            flags=['--noprofile','--norc','-c'] if shell=='bash' else ['-dfc']
+                            rc='.bashrc' if shell=='bash' else '.zshrc'
+                            launch=[binary]+flags+['. "$HOME/'+rc+'"; uds "$@"','journey']+args
+                        task=subprocess.Popen(launch,cwd=root,env=env,stdin=subprocess.DEVNULL,stdout=console,stderr=subprocess.STDOUT,start_new_session=True)
                     deadline=time.monotonic()+20
                     while not started.exists():
                         self.assertIsNone(task.poll());self.assertLess(time.monotonic(),deadline);time.sleep(.03)
@@ -94,7 +97,7 @@ class UserJourneyTests(unittest.TestCase):
                     gold=(records[0].parent/'console.log').open('rb')
                     browser_env=dict(env,UDS_JOURNEY_BROWSER_EVENT=str(event),BROWSER=shlex.quote(sys.executable)+' '+shlex.quote(str(ROOT/'tests/journey_browser_handoff.py'))+' %s')
                     manifest=root/'manifest.json';task_exit=root/'task-exit.json'
-                    private_json(manifest,dict(shell=shell,package_alias='watcher-journey-alias',deploy_pid=pid,deploy_started_before_viewer=True,browser_event=str(event),release_prepare=str(release_prepare),release_verify=str(release_verify),task_exit=str(task_exit),terminal=str(expected),capture_mode='sonic-task' if sonic else 'task',evidence=str(evidence)))
+                    private_json(manifest,dict(shell=shell,package_alias='watcher-journey-alias',deploy_pid=pid,deploy_started_before_viewer=True,browser_event=str(event),release_prepare=str(release_prepare),release_verify=str(release_verify),task_exit=str(task_exit),terminal=str(expected),capture_mode='sonic-task' if sonic else 'shell-capture',evidence=str(evidence)))
                     with viewer_log.open('wb') as log:
                         viewer=subprocess.Popen([str(ROOT/'uds-watch') if sonic else str(root/'home/.local/bin/uds-watch')],cwd=root,env=browser_env,stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
                     driver_env=dict(env)
@@ -111,7 +114,7 @@ class UserJourneyTests(unittest.TestCase):
                     self.assertEqual(task.wait(timeout=5),0)
                     viewer.send_signal(signal.SIGINT);self.assertEqual(viewer.wait(timeout=5),0)
                     if not sonic:
-                        removed=subprocess.run([str(ROOT/'uninstall.sh'),str(root/'tasks.yaml')],env=env,capture_output=True,timeout=10)
+                        removed=subprocess.run([str(ROOT/'uninstall.sh')],env=env,capture_output=True,timeout=10)
                         self.assertEqual(removed.returncode,0,removed.stderr.decode(errors='replace'));self.assertEqual((root/'tasks.yaml').read_text(),plain)
                     print(output.strip())
                 finally:

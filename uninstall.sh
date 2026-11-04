@@ -1,14 +1,8 @@
 #!/usr/bin/env bash
-# Remove only this checkout's shortcut, managed shell blocks, and task tee.
+# Remove only this checkout's global launcher and managed shell blocks.
 set -euo pipefail
+if [[ $# -ne 0 ]]; then printf 'Usage: ./uninstall.sh (no arguments)\n' >&2; exit 2; fi
 root=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
-target="${1:-$PWD}"
-if [[ -d "$target" ]]; then target="$target/tasks/swf.yaml"; fi
-if [[ ! -f "$target" ]]; then
-  printf 'Usage: ./uninstall.sh /path/to/deployment-repo-or-task-file\n' >&2
-  exit 1
-fi
-python3 "$root/scripts/task-capture.py" uninstall "$target" --check
 python3 - "$root" <<'PY'
 import os
 from pathlib import Path
@@ -41,6 +35,5 @@ for file,cleaned,created in changes:
 launcher=home/'.local/bin/uds-watch'
 if launcher.is_symlink() and launcher.resolve()==root/'uds-watch':launcher.unlink()
 print('Removed the uds-watch shortcut. Open a new terminal to reload your shell.')
-print('Official UDS and unrelated settings were left unchanged.')
+print('Official UDS, deployment tasks, and unrelated settings were left unchanged.')
 PY
-python3 "$root/scripts/task-capture.py" uninstall "$target"

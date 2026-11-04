@@ -23,49 +23,54 @@ Use `./uds-watch --no-browser` to print the private URL instead.
 Running the viewer never installs anything or changes your shell or UDS binary.
 Terminal colors are automatic; set `NO_COLOR=1` to disable them.
 
-## Optional global shortcut
+## Optional global setup
 
 ```bash
-./install.sh /path/to/deployment-repo
+./install.sh
 # Open a new terminal, then use the same watcher from any directory:
 uds watch
 uds watch --port 0
 ```
 
-The installer links `~/.local/bin/uds-watch` to this checkout and adds the
-`uds watch` shortcut to Bash/Zsh startup files. Keep the checkout in place.
-Re-running installation does not duplicate configuration. Other `uds` commands
-pass through to the official CLI with their arguments and exit status unchanged.
-The installer also connects deployment output to the existing capture helper in
-`tasks/swf.yaml` inside the selected repository. You can pass a task-file path
-instead. It handles `uds deploy`, `./uds deploy`, and package deploy actions;
-existing capture hooks are left alone. No binary is replaced, and commands
-outside the configured tasks are not automatically captured.
+No repository path is needed. The installer links `~/.local/bin/uds-watch` to
+this checkout and configures Bash/Zsh. Keep the checkout in place.
 
-Only straightforward Bash task actions are supported. Unsupported layouts fail
-without guessing or rewriting unrelated commands.
+The shell function opens the viewer for `uds watch` and copies output from
+plain `uds deploy ...` (or `uds d ...`) through the existing capture helper.
+Arguments and the native exit status are preserved. Other commands pass straight
+through to the official CLI. Put deployment flags after `deploy` to use capture.
 
-To remove only this installation's shortcut and shell configuration:
+Reinstalling updates the managed shell block without duplicating it. The
+installer never replaces the official UDS binary or edits deployment task files.
+
+To remove this global setup:
 
 ```bash
-./uninstall.sh /path/to/deployment-repo
+./uninstall.sh
 ```
 
-Open a new terminal afterward. Uninstallation removes its marked task capture
-wiring and shell shortcut, leaving the official UDS binary, pre-existing capture
-hooks, unrelated shell settings, and this checkout intact.
+Open a new terminal afterward. Uninstallation leaves the official UDS binary,
+existing task capture hooks, unrelated shell settings, and this checkout intact.
 
 ## Deploy normally
 
-Run your normal **capture-enabled SONIC deployment task** in another terminal.
-The task copies the native CLI's output; this app only reads that capture.
+After installation, run `uds deploy ...` in another Bash/Zsh terminal.
+The shell function copies the native CLI's output; the viewer only reads it.
 
-The viewer can start before the task or afterward, while deployment is still
-running. It never reads terminal history or attaches to a deployment's TTY.
+Start the viewer before deployment or while it is still running. It never reads
+terminal history or attaches to a deployment's TTY.
 
-Full progress requires that task-side output capture. A plain `uds deploy`
-outside a capture-enabled task may expose only partial diagnostic logs.
-This viewer does not automatically record arbitrary commands or scripts.
+`./uds`, absolute executable paths, `command uds`, `uds run`, and commands inside
+scripts bypass this shell capture. Those workflows, including SONIC tasks, need
+an explicit capture tee configured separately. The existing pattern remains:
+
+```bash
+./uds deploy ... 2>&1 | ("$HOME/.local/bin/uds-watch" capture || cat)
+exit "${PIPESTATUS[0]}"  # Bash task owns the native status
+```
+
+Without shell capture or an explicit task tee, only partial diagnostic logs may
+be available. Arbitrary commands and scripts are not automatically recorded.
 
 ## Things to know
 
@@ -96,9 +101,9 @@ supported. No database, telemetry, external assets or permanent history is used.
 If you enabled CLI registration in 0.1.0a6, run **that version's**
 `./uds-watch uninstall` before updating, while CLI commands are idle. It restores
 the preserved native executable. Remove any older managed shell hook with its
-old version's uninstall command too. Those binary-registration/automatic-capture
-installers are not included here; `install.sh` adds the shell shortcut and an
-explicit task-side capture tee, never a binary wrapper.
+old version's uninstall command too. Those binary-registration installers are
+not included here. The current installer only configures the Bash/Zsh function
+and existing stdin tee; it never replaces a CLI executable.
 
 ## Development
 

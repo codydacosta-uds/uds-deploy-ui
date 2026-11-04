@@ -23,7 +23,7 @@ def get(path,raw=False):
     return content if raw else json.loads(content)
 run=until(lambda:next((state for state in get('api/deployments') if state.get('source',{}).get('pid')==manifest['deploy_pid']),None),'Native capture not attached')
 route='api/deployments/'+quote(run['id'])
-assert run['source']['output_complete']
+assert run['source']['output_complete'], 'Expected full capture: '+json.dumps(run['source'])
 assert manifest['deploy_started_before_viewer']
 Path(manifest['release_prepare']).touch()
 until(lambda:any(report.get('definition_owner',{}).get('component')=='verify' and report.get('message')=='running command' for report in get(route)['reports']),'Live CLI transition missing')
