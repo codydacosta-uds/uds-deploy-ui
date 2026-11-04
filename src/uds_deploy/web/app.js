@@ -456,7 +456,6 @@ function renderStockPipeline(){
   const canvas=$('packages');canvas.classList.add('stock-pipeline');
   const key=JSON.stringify([state.id,state.status,state.completed_at,state.mode,state.source,state.reports,state.checks,inspectorOpen,document.body.dataset.outputFocus,state.artifact_info,state.packages,packageLayout,pipelineSelection,state.packages.map(p=>componentChoices.get(state.id+'/'+p.id)),[...stepChoices],quietFinished]);
   if(canvas.dataset.stockKey===key)return;canvas.dataset.stockKey=key;
-  const opened=new Set([...canvas.querySelectorAll('details[open][data-disclosure]')].map(e=>e.dataset.disclosure));
   canvas.replaceChildren();
   const reports=inferSequentialCompletion(state,scopeImageReports(state.reports||[])),errors=reports.filter(r=>r.message==='action failed'||r.kind==='deployment.error'),latest=reports.reduce((last,item)=>!last||item.timestamp>last.timestamp?item:last,null);
   function openOutput(focus,context,activity=null){
@@ -565,15 +564,16 @@ function renderStockPipeline(){
   if(concurrent)banner.append(node('p','Concurrent mode · '+activePackages.size+' packages active · no dependency arrows','concurrency-note'));
   banner.append(track);
   const actions=node('div',undefined,'session-view-actions');
-  const output=node('button',limited?'View available output':'View CLI output','session-output-button');output.dataset.focusKey='session-output';output.onclick=()=>openOutput('session-output','Session');actions.append(output);statusHeading.append(actions);
+  const output=node('button',limited?'View available logs':'View all logs','session-output-button');output.title='Open the full captured deployment output without jumping to an activity';output.dataset.focusKey='session-output';output.onclick=()=>openOutput('session-output','Session');actions.append(output);statusHeading.append(actions);
   const lanes=node('div',undefined,'cli-activity-lanes');lanes.dataset.parallel=String(activePackages.size>1);
   if(activePackages.size>1)lanes.append(node('h2','Parallel activity · '+activePackages.size+' packages active','parallel-activity-heading'));
   for(const activity of activityOverviews(state,reports)){
     const pane=node('section',undefined,'cli-activity-card '+(activity.ended?'last-cli-activity':'current-cli-activity')+' '+activity.state),heading=node('div',undefined,'current-cli-heading');pane.dataset.activityPackage=activity.report?.definition_owner?.package||'';
     pane.setAttribute('aria-label',activity.ended?'Last CLI activity':'Current CLI activity');
     heading.append(node('span',activity.ended?'Last activity':'Live activity','current-cli-label'),stepIcon(activity.state),node('strong',(activity.context?activity.context+' / ':'')+activity.label),durationNode(activity.timing));
-    const link=node('button','Go to logs','current-cli-log-link'),r=activity.report;
-    link.onclick=()=>{const locate=r&&Object.values(NAVIGATION_MESSAGES).includes(r.kind)&&r.resource;openOutput('current-cli-report','Current activity',locate?{items:[{...r,first_log_id:r.log_id||r.first_log_id}],label:activity.label}:null);};
+    const r=activity.report,locate=r&&([r.log_id,r.first_log_id].some(id=>Number.isSafeInteger(id)&&id>0)||Object.values(NAVIGATION_MESSAGES).includes(r.kind)&&r.resource);
+    const link=node('button',locate?'Jump to activity':limited?'View available logs':'View all logs','current-cli-log-link');link.title=locate?'Jump to the log line for this reported activity':'No exact activity line is available; open the captured deployment output';
+    link.onclick=()=>openOutput('current-cli-report','Current activity',locate?{items:[{...r,first_log_id:Number.isSafeInteger(r.log_id)&&r.log_id>0?r.log_id:r.first_log_id}],label:activity.label}:null);
     heading.append(link);pane.append(heading,node('p',activity.detail,'current-cli-report'));pane.title='SDK-reported activity; inferred completion remains explicitly identified in the evidence.';lanes.append(pane);
   }
   if(lanes.childElementCount)canvas.append(lanes);
@@ -680,14 +680,6 @@ function renderStockPipeline(){
     canvas.append(section);
   }
   if(!running)finishedViews.add(state.id);
-  const info=node('details',undefined,'session-details');info.dataset.disclosure='session-details';info.open=opened.has('session-details');info.append(node('summary','Session details'));
-  const meta=node('dl',undefined,'session-metadata');
-  const fields=[['Process',state.source.pid?'PID '+state.source.pid:'Task-owned capture'],['Output',state.source.note]];
-  if(state.source.kind==='stock-process'&&state.completed_at)fields.push(['Result','Process ended. Its exit code is unavailable to this watcher; check the deployment terminal.']);
-  if(!running&&latest)fields.push(['Last reported activity',latest.message+(latest.resource?' · '+latest.resource:'')]);
-  for(const [name,value]of fields)meta.append(node('dt',name),node('dd',value));info.append(meta);
-  info.append(node('p','Done can be inferred when the same sequential CLI advances without a reported error. Hover a step for its evidence. Process disappearance is not success; Kubernetes checks remain separate observations.','session-notes'));
-  canvas.append(info);
 }
 function renderPipeline(){
   $('jobs-total').textContent=state.packages.length;

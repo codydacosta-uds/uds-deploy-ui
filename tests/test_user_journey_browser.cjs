@@ -23,6 +23,7 @@ async function until(test,message,timeout=25000){const deadline=Date.now()+timeo
   const logo=page.locator('.uds-brand img:visible');assert.equal(await logo.count(),1);assert.equal(await logo.evaluate(e=>e.complete&&e.naturalWidth>0),true);assert.equal(await logo.getAttribute('src'),'uds-logo.png');
   const source=await page.evaluate(()=>({complete:state.source.output_complete,note:state.source.note,run:state.id}));assert.equal(source.complete,true);assert.match(source.note,/full CLI session/);
   assert.ok(await page.locator('.current-cli-activity.running').count()>0,'Late attachment shows the real ongoing CLI action');
+  await page.locator('.current-cli-log-link').first().click();await page.waitForFunction(()=>!logLoading&&document.querySelector('#logs .log-anchor'));assert.match(await page.locator('#log-subtitle').innerText(),/Jumped to/,'Current actions jump by their exact captured line ID');await page.getByRole('button',{name:'Close logs',exact:true}).click();
   const card=page.locator('.package-execution').first();assert.equal(await card.locator('.component-execution:visible').getAttribute('data-component'),'prepare');assert.ok(await card.locator('.stock-job.running').count()>0);
   assert.ok(await card.locator('.component-progress-row[aria-pressed="true"] .component-progress-step.running').count()>0,'The selected active row keeps its running icon and step label');
   assert.equal(await card.locator('.component-counts').count(),0);
