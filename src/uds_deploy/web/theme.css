@@ -7,7 +7,7 @@ html[data-theme=light] body[data-mode=live] .status-icon.unknown { background: t
 #matrix-view { min-width: 0; }
 #matrix-navigation .matrix-run-status { margin-left: 12px; font-size: 10px; }
 .matrix-child-context { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 12px 0 4px; }
-.matrix-child-context h2 { flex: 1; margin: 0; }
+.matrix-child-context h2 { margin: 0; }
 .matrix-child-context .session-yaml { background: var(--theme-panel,#fff); border-color: var(--theme-border,#cbd2da); color: var(--theme-link,#1f5fa9); font-size: 11px; }
 .matrix-job[aria-pressed=true] { box-shadow: 0 0 0 1px var(--status-running); }
 .matrix-surface.matrix-list { display: grid; min-width: 0; gap: 16px; }
@@ -110,6 +110,7 @@ html[data-theme=dark] body[data-mode=live] .package-yaml:hover { background: var
 body[data-mode=live] .component-progress-list { padding: 4px; }
 body[data-mode=live] .component-progress-row, .component-overview-columns { display: grid; grid-template-columns: minmax(180px,26%) minmax(0,1fr) 92px 76px; align-items: center; gap: 12px; }
 body[data-mode=live] .component-progress-row { min-height: 34px; padding: 6px 10px; }
+body[data-mode=live] .component-progress-list .component-progress-row.is-current { border-left-color: transparent; }
 .component-overview-columns { padding: 6px 17px; color: var(--theme-muted,#626b76); font-size: 10px; }
 .component-overview-columns > :last-child { text-align: right; }
 body[data-mode=live] .component-progress-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -210,7 +211,7 @@ body[data-mode=live] .deployment-package.succeeded { border-color: #108548; }
 .deployment-package-track[data-layout=list] { display: grid; grid-template-columns: minmax(0,1fr); max-height: 320px; overflow-y: auto; gap: 6px; }
 body[data-mode=live] .deployment-package-track[data-layout=list] .deployment-package { width: 100%; padding-block: 8px; }
 body[data-mode=live] .deployment-package.is-selected { box-shadow: inset 0 0 0 1px var(--theme-border,#8b96a4); }
-.packages-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 0 8px; }
+.packages-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 0 8px; scroll-margin-top: 12px; }
 .packages-toolbar .packages-heading { padding: 0; font-size: 16px; color: #243746; }
 .package-disclosure-controls { display: flex; gap: 8px; }
 body[data-mode=live] .package-disclosure-controls button { padding: 5px 10px; background: #fff; color: #4b5b66; border-color: #c9ced6; font-size: 11px; }
@@ -490,7 +491,6 @@ html[data-theme=dark] body[data-mode=live] .output-actions button { color: var(-
 html[data-theme=dark] body[data-mode=live] .step-status-icon.unknown { background: transparent; border-color: #9ba4b0; }
 html[data-theme=dark] body[data-mode=live] .step-status-icon.running { background: transparent; border-color: var(--theme-border); border-top-color: var(--status-running); border-right-color: var(--status-running); }
 html[data-theme=dark] body[data-mode=live] .deployment-package.running,
-html[data-theme=dark] body[data-mode=live] .component-progress-row.is-current,
 html[data-theme=dark] body[data-mode=live] .execution-rail .stock-job.running { border-color: var(--status-running); }
 html[data-theme=dark] body[data-mode=live] .deployment-active-total,
 html[data-theme=dark] body[data-mode=live] .component-progress-current,

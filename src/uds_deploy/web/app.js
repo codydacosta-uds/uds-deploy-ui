@@ -147,7 +147,9 @@ async function chooseRun(id,navigate=true,parent=null,snapshot=null){
     if(state.matrix){$('nav-pipeline').disabled=false;$('breadcrumb-run').textContent='/ '+state.bundle_name;$('connection').textContent='● Live';$('connection').className='live';showPage('pipeline');notice('');return;}
     selected=(state.packages.find(p=>p.status==='deploying')||state.packages.find(p=>p.status==='failed')||state.packages[0]).id;
     $('nav-pipeline').disabled=false;$('breadcrumb-run').textContent=`/ ${state.bundle_name}${liveOnly?'':' · #'+state.id.slice(0,8)}`;
-    showPage('pipeline');await loadLogs();if(mine!==generation)return;
+    showPage('pipeline');
+    if(parent)requestAnimationFrame(()=>{if(mine===generation&&pageView==='pipeline')$('packages').querySelector('.packages-toolbar')?.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});});
+    await loadLogs();if(mine!==generation)return;
     stream=new EventSource(`${api}/${id}/events?after=${state.cursor}`);
     stream.onopen=()=>{if(mine!==generation)return;$('connection').textContent='● Live';$('connection').className='live';refreshState(mine);};
     stream.onerror=()=>{$('connection').textContent='Reconnecting · missed events will replay';$('connection').className='';};
