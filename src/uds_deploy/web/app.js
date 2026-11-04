@@ -130,17 +130,18 @@ async function discover(){
   else if(next)await chooseRun(next,false);
   else if(state&&(liveOnly||runs.some(item=>item.id===run&&item.status!==state.status)))await refreshState();
 }catch(e){notice(e.message);}finally{discovering=false;}}
-async function chooseRun(id,navigate=true,parent=null){
+async function chooseRun(id,navigate=true,parent=null,snapshot=null){
   // Picking a historical run pins it; choosing an active run resumes following.
   if(navigate)autoFollowRuns=isActiveRun(discoveredRuns.find(r=>r.id===id));
   matrixParent=parent;
   generation++;const mine=generation;if(stream)stream.close();if(refreshTimer){clearTimeout(refreshTimer);refreshTimer=null;}
   run=id;state=null;selected=attempt=null;pipelineSelection=null;autoAttempt=true;full=true;rawMode=liveOnly;inspectorOpen=false;clearScope();$('history').value=id;
-  $('connection').textContent='Loading deployment…';$('connection').className='';
+  $('connection').textContent=parent?'● Live':'Loading deployment…';$('connection').className=parent?'live':'';
   if(navigate)window.history.pushState(null,'',deploymentURL(parent?.id||id));else window.history.replaceState(null,'',deploymentURL(parent?.id||id));updateActiveLink();
   graphView='pipeline';
+  if(parent)renderMatrixLoading(parent,id);
   try{
-    const current=await request(`${api}/${id}`);if(mine!==generation)return;state=current;
+    const current=snapshot||await request(`${api}/${id}`);if(mine!==generation)return;state=current;
     if(state.matrix){$('nav-pipeline').disabled=false;$('breadcrumb-run').textContent='/ '+state.bundle_name;$('connection').textContent='● Live';$('connection').className='live';showPage('pipeline');notice('');return;}
     selected=(state.packages.find(p=>p.status==='deploying')||state.packages.find(p=>p.status==='failed')||state.packages[0]).id;
     $('nav-pipeline').disabled=false;$('breadcrumb-run').textContent=`/ ${state.bundle_name}${liveOnly?'':' · #'+state.id.slice(0,8)}`;
@@ -158,7 +159,7 @@ async function chooseRun(id,navigate=true,parent=null){
       // Log volume never drives lifecycle refreshes. Only typed/state events do.
       if(!refreshTimer)refreshTimer=setTimeout(()=>{refreshTimer=null;refreshState(mine);},150);
     });notice('');
-  }catch(e){notice(e.message);}
+  }catch(e){if(mine!==generation)return;const loading=$('matrix-child-loading');if(loading)loading.textContent='Job details unavailable. Close or select another job.';notice(e.message);}
 }
 async function refreshState(mine=generation){try{const current=await request(`${api}/${run}`);if(mine!==generation)return;const old=attempt;state=current;render();if(!full&&old!==attempt)await loadLogs();}catch(e){notice(e.message);}}
 function selectPackage(id){selected=id;attempt=null;autoAttempt=true;full=false;inspectorOpen=true;clearScope();render();loadLogs().catch(e=>notice(e.message));$('job-inspector').scrollIntoView({block:'start'});}
@@ -691,6 +692,7 @@ function renderStockPipeline(){
   if(!running)finishedViews.add(state.id);
 }
 function renderPipeline(){
+  if(state?.matrix){renderMatrixRun(state);return;}
   $('jobs-total').textContent=state.packages.length;
   $('group-toolbar').hidden=graphView!=='pipeline'||liveOnly;
   for(const [id,active]of [['stage-grouping',grouping==='stages'],['dependency-grouping',grouping==='dependencies']]){$(id).classList.toggle('active',active);$(id).setAttribute('aria-pressed',String(active));}
@@ -739,7 +741,7 @@ function matrixNavigation(group,actions=null){
   const banner=node('section',undefined,'deployment-status-bar session-activity-heading');banner.id='matrix-navigation';banner.setAttribute('aria-label','Package navigation');
   const header=node('div',undefined,'deployment-status-heading'),titleLine=node('div',undefined,'pipeline-title-line'),layouts=node('div',undefined,'pipeline-layout-toggle');titleLine.append(node('h2','Package navigation'));
   for(const mode of ['pipeline','list']){const button=node('button',title(mode));button.type='button';button.setAttribute('aria-pressed',String(packageLayout===mode));button.onclick=()=>{packageLayout=mode;$('packages').dataset.stockKey='';$('packages').dataset.matrixRunKey='';render();};layouts.append(button);}titleLine.append(layouts,node('span',taskStatus(group).label,'matrix-run-status run-status '+taskStatus(group).status));const titleBlock=node('div',undefined,'pipeline-title');titleBlock.append(titleLine);header.append(titleBlock);
-  if(matrixParent){actions=actions||node('div',undefined,'session-view-actions');const close=node('button','Close child details','session-output-button');close.onclick=()=>chooseRun(group.id,false);actions.prepend(close);}
+  if(matrixParent){actions=actions||node('div',undefined,'session-view-actions');const close=node('button','Close child details','session-output-button');close.onclick=()=>chooseRun(group.id,false,null,group);actions.prepend(close);}
   if(actions)header.append(actions);
   const panel=node('div');panel.id='matrix-view';panel.setAttribute('aria-label','Concurrent deployment matrix');banner.append(header,panel);return banner;
 }
@@ -751,14 +753,22 @@ function renderMatrixOverview(group){
   for(const [value,label,kind] of [[group.packages.length,'Packages','packages'],[jobs.filter(j=>j.status==='completed').length,'Jobs completed','confirmed'],[jobs.filter(j=>j.status==='deploying').length,'Jobs active','active'],[jobs.filter(j=>!j.started_at).length,'Jobs not started','unknown']]){const metric=node('div',undefined,'overview-metric '+kind);metric.dataset.metric=kind;metric.append(node('strong',String(value)),node('span',label));overview.append(metric);}overview.title='Runner-reported job results';
 }
 function renderMatrixRun(group){
+  $('group-toolbar').hidden=true;$('graph-caption').hidden=true;
   $('job-inspector').hidden=true;$('packages').hidden=false;$('jobs').hidden=true;renderMatrixOverview(group);
   const canvas=$('packages'),key=JSON.stringify([group.id,packageLayout]);canvas.classList.add('stock-pipeline');
   if(canvas.dataset.matrixRunKey!==key||!$('matrix-view')){canvas.replaceChildren(matrixNavigation(group));canvas.dataset.matrixRunKey=key;canvas.dataset.stockKey='';}
   renderMatrix(group);updateActiveLink();
 }
+function renderMatrixLoading(group,id){
+  const navigation=$('matrix-navigation');if(!navigation)return;
+  while(navigation.nextSibling)navigation.nextSibling.remove();
+  $('job-inspector').hidden=true;$('packages').dataset.stockKey='';
+  renderMatrixOverview(group);renderMatrix(group);
+  const job=group.matrix.jobs.find(job=>job.child_run_id===id),loading=node('p','Loading '+(job?matrixJobLabel(job):'job')+' details…','matrix-child-context');loading.id='matrix-child-loading';loading.setAttribute('role','status');navigation.after(loading);
+}
 function renderMatrix(group){
   const panel=$('matrix-view'),status=taskStatus(group),badge=panel.parentElement.querySelector('.matrix-run-status');badge.textContent=status.label;badge.className='matrix-run-status run-status '+status.status;
-  const key=JSON.stringify([group,state.id,packageLayout]);
+  const key=JSON.stringify([group,run,packageLayout]);
   if(panel.dataset.key===key){updateDurations();return;}panel.dataset.key=key;
   const scroll=panel.querySelector('.matrix-scroll')?.scrollLeft||0,focus=document.activeElement?.dataset.focusKey;
   const viewport=node('div',undefined,'matrix-scroll'),surface=node('div',undefined,'matrix-surface'+(packageLayout==='list'?' matrix-list':'')),svg=svgNode('svg');svg.classList.add('matrix-wires');svg.setAttribute('aria-hidden','true');surface.append(svg);
@@ -766,7 +776,7 @@ function renderMatrix(group){
     const jobs=group.matrix.jobs.filter(job=>job.layer===layer.id);if(!jobs.length)continue;
     const grouped=jobs.length>1,appearance=matrixAppearance(matrixLayerStatus(jobs)),details=node(grouped?'details':'div',undefined,'matrix-layer'+(grouped?'':' matrix-single')),disclosureKey='matrix/'+group.id+'/'+layer.id;details.dataset.matrixLayer=layer.id;
     if(grouped){
-      details.open=disclosure.has(disclosureKey)?disclosure.get(disclosureKey):appearance.state==='running'||jobs.some(job=>job.child_run_id===state.id);
+      details.open=disclosure.has(disclosureKey)?disclosure.get(disclosureKey):appearance.state==='running'||jobs.some(job=>job.child_run_id===run);
       const summary=node('summary',undefined,'matrix-summary'),text=node('span'),counts=jobs.filter(j=>j.status==='completed').length+' / '+jobs.length+' jobs completed';
       summary.dataset.focusKey='matrix-layer:'+layer.id;summary.onclick=()=>disclosure.set(disclosureKey,!details.open);
       summary.append(stepIcon(appearance.state));text.append(node('strong',jobs.length+' jobs'),node('span',counts+' · '+appearance.label,'matrix-count'));summary.append(text);details.append(summary);
@@ -774,12 +784,12 @@ function renderMatrix(group){
     const children=node('div',undefined,'matrix-jobs');
     for(const job of jobs){
       const view=matrixAppearance(job.status),button=node('button',undefined,'matrix-job '+view.state),content=node('span',undefined,'matrix-job-content'),top=node('span',undefined,'matrix-job-heading');
-      button.dataset.matrixJob=job.id;button.dataset.focusKey='matrix-job:'+job.id;button.dataset.jobStatus=job.status;button.setAttribute('aria-pressed',String(job.child_run_id===state.id));button.disabled=!job.child_run_id;
+      button.dataset.matrixJob=job.id;button.dataset.focusKey='matrix-job:'+job.id;button.dataset.jobStatus=job.status;button.setAttribute('aria-pressed',String(job.child_run_id===run));button.disabled=!job.child_run_id;
       top.append(node('strong',matrixJobLabel(job)),node('span',view.label,'matrix-job-status'));
       const meta=node('span',undefined,'matrix-job-meta');meta.append(node('span',job.started_at?'Started '+clock(job.started_at):'Not started'),durationNode({start:job.started_at,end:job.completed_at,running:job.status==='deploying',evidence:'Runner-reported job start/end time'}));
       content.append(top,meta);button.append(stepIcon(view.state),content);
       button.title=job.packages.join(', ')+'\n'+(job.dependencies.length?'After: '+job.dependencies.join(', '):'No prerequisites')+'\n'+(job.exit_code!==null?'Runner reported exit '+job.exit_code:'No final exit result reported')+'\n'+(job.child_run_id?'Open captured components and logs below':'Captured output is not available for this job yet');
-      if(job.child_run_id)button.onclick=()=>{const close=matrixParent?.id===group.id&&run===job.child_run_id;chooseRun(close?group.id:job.child_run_id,false,close?null:group);};
+      if(job.child_run_id)button.onclick=()=>{const close=matrixParent?.id===group.id&&run===job.child_run_id;chooseRun(close?group.id:job.child_run_id,false,close?null:group,close?group:null);};
       children.append(button);
     }
     details.append(children);if(grouped)details.ontoggle=scheduleWires;surface.append(details);

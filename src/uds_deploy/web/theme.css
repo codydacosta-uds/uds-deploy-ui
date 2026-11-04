@@ -23,6 +23,7 @@
 .matrix-single .matrix-jobs { padding: 0; }
 .matrix-job { position: relative; z-index: 1; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 78px; padding: 12px; border: 1px solid var(--theme-border,#cbd2da); border-radius: 8px; background: var(--theme-panel,#fff); color: var(--theme-text,#34495e); text-align: left; }
 .matrix-job:disabled { opacity: 1; cursor: default; }
+body[data-mode=live] .matrix-job:hover { background: var(--theme-hover,#f5f7fa); }
 .matrix-job.running,.matrix-job[aria-pressed=true] { border-color: var(--status-running); }
 .matrix-job.failed { border-color: var(--status-failed); }
 .matrix-job-content { flex: 1; min-width: 0; }
