@@ -20,7 +20,8 @@ function contrast(a,b){const lum=s=>s.match(/[\d.]+/g).slice(0,3).map(Number).ma
   assert.ok(await overviewRow.locator('td').evaluateAll(cells=>cells.every(cell=>getComputedStyle(cell).verticalAlign==='baseline')),'Row text aligns to the deployment name first-line baseline');
   assert.equal(await page.locator('.task-target:visible').count(),0);assert.doesNotMatch(await overviewRow.innerText(),/#native-|Local CLI process|See pipeline/);assert.match(await overviewRow.locator('.package-total').innerText(),/\d+ packages?/);
   for(const theme of ['dark','light']){if(await page.locator('html').getAttribute('data-theme')!==theme)await page.locator('#theme-toggle').click();await page.evaluate(()=>document.fonts.ready);await page.screenshot({path:path.join(evidence,theme+'-current-tasks-desktop.png'),fullPage:true});}
-  await page.locator('[data-run="'+id+'"] .deployment-link').click();await page.waitForSelector('#workspace:visible');
+  assert.equal(await overviewRow.locator('.history-status').getAttribute('href'),await overviewRow.locator('.deployment-link').getAttribute('href'),'Status and name link to the same deployment');
+  await overviewRow.locator('.history-status').focus();await page.keyboard.press('Enter');await page.waitForSelector('#workspace:visible');
   await page.getByRole('button',{name:'← Current tasks',exact:true}).click();await page.waitForTimeout(1200);assert.equal(await page.locator('#deployments-page').isVisible(),true,'Returning to Current tasks stays there across polls');assert.equal(new URL(page.url()).searchParams.has('deployment'),false);
   await page.goBack();await page.waitForSelector('#workspace:visible');await page.waitForSelector('.package-execution');await page.evaluate(()=>document.fonts.ready);
   assert.equal(await page.locator('.uds-brand img:visible').count(),1,'Use the approved UDS branding');assert.equal(await page.locator('.watch-brand').count(),0);
