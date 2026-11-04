@@ -70,30 +70,40 @@ function showPage(view,navigate=false){
   if(navigate){const url=new URL(location.href);if(view==='history')url.searchParams.delete('deployment');else if(run)url.searchParams.set('deployment',run);window.history.pushState(null,'',url);}
   if(view==='history'){notice('');renderHistory();if(!stream){$('connection').textContent='Local viewer';if(liveOnly)$('connection').className='live';}}else if(state){render();scheduleWires();}
 }
+function taskStatus(snapshot){
+  if(snapshot.status==='failed'||(snapshot.reports||[]).some(r=>r.kind==='deployment.error'||r.message==='action failed'))return {status:'failed',label:'Failed',evidence:'A deployment failure was reported'};
+  if(['completed','succeeded'].includes(snapshot.status))return {status:'completed',label:'Done',evidence:'Deployment completed'};
+  if(inferredRunCompletion(snapshot))return {status:'completed',label:'Done',evidence:'Assumed complete from the full error-free deployment output and completed observed work; native exit code was not observed'};
+  if(['deploying','running'].includes(snapshot.status))return {status:'deploying',label:'Running',evidence:'Deployment is in progress'};
+  if(['waiting','pending'].includes(snapshot.status))return {status:'waiting',label:'Pending',evidence:'Waiting to start'};
+  return {status:snapshot.status||'unknown',label:snapshot.status==='unknown'?'Unconfirmed':title(snapshot.status),evidence:'No confirmed final result was observed'};
+}
 function renderHistory(){
   const search=$('deployment-search').value.trim().toLocaleLowerCase(),filter=$('deployment-status').value;
   const items=discoveredRuns.filter(r=>`${r.bundle_name} ${r.version} ${r.environment} ${r.target} ${r.id}`.toLocaleLowerCase().includes(search)&&(!filter||filter==='active'&&['waiting','deploying'].includes(r.status)||filter==='unknown'&&['unknown','cancelled'].includes(r.status)||r.status===filter));
   $('deployment-total').textContent=discoveredRuns.length;
   $('deployment-table-scroll').hidden=items.length===0;
-  $('history-empty').hidden=discoveredRuns.length!==0;$('history-note').textContent=liveOnly?'Current local tasks only. No database, saved deployment history, or UI-owned retries.':`${items.length} of ${discoveredRuns.length} saved runs · latest 50 shown. Start deployments from the terminal.`;
-  const key=JSON.stringify([items.map(item=>[item.id,item.status,item.bundle_name,item.version,item.environment,item.target,item.created_at,item.package_counts,item.package_count,item.unverified_operations]),search,filter]);
+  $('history-empty').hidden=discoveredRuns.length!==0;$('history-note').textContent=liveOnly?'Current tasks only. No saved deployment history.':`${items.length} of ${discoveredRuns.length} saved runs · latest 50 shown. Start deployments from the terminal.`;
+  const key=JSON.stringify([items.map(item=>[item.id,liveOnly?taskStatus(item):item.status,item.bundle_name,item.version,item.environment,item.target,item.created_at,item.started_at,item.packages?.length,item.package_counts,item.package_count,item.unverified_operations]),search,filter]);
   if(key!==historyKey){
     historyKey=key;const rows=document.createDocumentFragment();
     for(const item of items){
       const row=node('tr');row.dataset.run=item.id;
-      const status=node('td'),badge=node('span',undefined,`history-status ${item.status}`);badge.append(statusIcon(item.status),node('span',item.status==='deploying'?'Running':title(item.status)));status.append(badge);
+      const appearance=liveOnly?taskStatus(item):{status:item.status,label:item.status==='deploying'?'Running':title(item.status)};
+      const status=node('td'),badge=node('span',undefined,`history-status ${appearance.status}`);badge.title=appearance.evidence||'';badge.append(statusIcon(appearance.status),node('span',appearance.label));status.append(badge);
       const deployment=node('td'),link=node('a',`${item.bundle_name} ${item.version}`,'deployment-link');link.href=deploymentURL(item.id);link.onclick=e=>{if(e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey){e.preventDefault();chooseRun(item.id);}};
-      deployment.append(link,node('span',`#${item.id.slice(0,8)} · ${new Date(item.created_at*1000).toLocaleString()}`,'cell-secondary'));
-      const target=node('td');target.title=item.target;target.append(node('span',item.environment,'environment-label'),node('span',item.target?.includes(':cluster/')?item.target.split(':cluster/').pop():item.target,'cell-secondary'));
+      const date=new Date((liveOnly?(item.started_at||item.created_at):item.created_at)*1000),stamp=node('span',liveOnly?date.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):`#${item.id.slice(0,8)} · ${date.toLocaleString()}`,'cell-secondary');stamp.title=date.toLocaleString();deployment.append(link,stamp);
+      const target=node('td',undefined,'task-target');if(!liveOnly){target.title=item.target;target.append(node('span',item.environment,'environment-label'),node('span',item.target?.includes(':cluster/')?item.target.split(':cluster/').pop():item.target,'cell-secondary'));}
       const packages=node('td'),counts=item.package_counts;
-      if(counts){packages.append(node('span',`${counts.completed||0} / ${item.package_count}`,'package-total'));const icons=node('span',undefined,'package-summary');for(const state of ['completed','deploying','waiting','failed','unknown','cancelled'])if(counts[state]){const part=node('span',undefined,'summary-status');part.title=`${counts[state]} ${state}`;part.append(statusIcon(state),node('span',String(counts[state])));icons.append(part);}packages.append(icons);}else packages.append(node('span','See pipeline','muted'));
+      if(liveOnly){const total=item.packages?.length||item.package_count;packages.append(node('span',total?total+' '+(total===1?'package':'packages'):'—','package-total'));}
+      else if(counts){packages.append(node('span',`${counts.completed||0} / ${item.package_count}`,'package-total'));const icons=node('span',undefined,'package-summary');for(const state of ['completed','deploying','waiting','failed','unknown','cancelled'])if(counts[state]){const part=node('span',undefined,'summary-status');part.title=`${counts[state]} ${state}`;part.append(statusIcon(state),node('span',String(counts[state])));icons.append(part);}packages.append(icons);}else packages.append(node('span','See pipeline','muted'));
       if(item.unverified_operations)packages.append(node('span',`${item.unverified_operations} unverified operation${item.unverified_operations===1?'':'s'}`,'cell-secondary warning-text'));
       const duration=node('td',undefined,'duration-cell');duration.dataset.durationRun=item.id;
       const actions=node('td',undefined,'history-actions'),view=node('a','View','table-action');view.href=deploymentURL(item.id);view.setAttribute('aria-label','View deployment '+item.id.slice(0,8));view.onclick=e=>{if(e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey){e.preventDefault();chooseRun(item.id);}};
       const download=node('a','↓','table-action download-action');download.href=`${api}/${item.id}/logs?download=1`;download.title='Download original deployment output';download.setAttribute('aria-label','Download logs '+item.id.slice(0,8));download.download='deployment.log';actions.append(view,download);
       row.append(status,deployment,target,packages,duration,actions);rows.append(row);
     }
-    if(!items.length&&discoveredRuns.length){const row=node('tr'),cell=node('td','No deployments match these filters.','no-matches');cell.colSpan=6;row.append(cell);rows.append(row);}
+    if(!items.length&&discoveredRuns.length){const row=node('tr'),cell=node('td','No deployments match these filters.','no-matches');cell.colSpan=liveOnly?5:6;row.append(cell);rows.append(row);}
     $('deployment-rows').replaceChildren(rows);
   }
   for(const el of document.querySelectorAll('[data-duration-run]')){const item=discoveredRuns.find(r=>r.id===el.dataset.durationRun);el.textContent=item.started_at&&(item.completed_at||item.status==='deploying')?shortDuration(item.started_at,item.completed_at):'—';}

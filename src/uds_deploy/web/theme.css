@@ -5,6 +5,8 @@ body[data-mode=live] #deployments-page .cell-secondary,
 body[data-mode=live] #deployments-page .duration-cell,
 body[data-mode=live] #deployments-page .muted { color: #626b76; }
 body[data-mode=live] .deployment-table th { color: #4b5b66; }
+body[data-mode=live] .deployment-table .task-target { display: none; }
+body[data-mode=live] .table-action { color: var(--theme-link,#1f5fa9); border-color: var(--theme-border,#c9ced6); }
 body[data-mode=live] .count-label { background: #e6e8ec; color: #555e69; }
 html[data-theme=dark] body[data-mode=live] #deployments-page :is(.page-description,.empty,.cell-secondary,.duration-cell,.muted) { color: var(--theme-muted); }
 html[data-theme=dark] body[data-mode=live] .deployment-table th { color: var(--theme-muted); }
