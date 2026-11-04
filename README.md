@@ -86,11 +86,30 @@ capture helper reads stdin; it never launches or takes ownership of UDS.
 
 Do not add a second tee to plain `uds deploy` when shell capture is already
 installed. For concurrent runners, capture each native invocation separately—not
-the mixed output of the whole runner. **Aggregate concurrent-runner tracking is
-not currently integrated**; individual invocations are separate deployments.
+the mixed output of the whole runner. An integrated runner can also publish a
+small optional run record to group its invocations into one matrix. Without that
+record, individual invocations remain separate deployments.
 
 Without capture, the viewer may find only partial diagnostic output and cannot
 reliably show every step.
+
+### Grouped concurrent runs
+
+An integrated runner appears as **one Current tasks entry** with expandable layer
+cards, parallel jobs and declared dependency connections. Select a captured job
+to open its existing components and logs **below the matrix, on the same page**.
+Each job shows its status, start time and elapsed time.
+
+Normal `uds deploy` keeps the existing view. Grouping is explicit: using the same
+bundle never groups unrelated deployments. Job results come from the runner's
+actual exit results; missing results remain unconfirmed. Jobs not launched after
+a failure are marked **Not started**, not successful.
+
+**No installer change or new deployment command is needed.** The runner needs a
+one-time integration; installing the viewer alone does not expose arbitrary
+scripts' dependency graphs. Update the viewer and integrated runner before the
+next run. Already-running deployments are not retroactively grouped.
+See [runner integration](docs/concurrent-runs.md).
 
 ## Using the viewer
 
@@ -172,6 +191,7 @@ python3 -m unittest discover -s tests -p 'test_*.py' -q
 node tests/test_step_colors.cjs
 node tests/test_activity.cjs
 node tests/test_discovery.cjs
+node tests/test_matrix.cjs
 node tests/test_log_search.cjs
 node tests/test_yaml_highlighting.cjs
 ```
@@ -186,7 +206,9 @@ namespaces are not read.
 Isolated action-only SDK tests use `UDS_LIVE_INTEGRATION=1` or
 `UDS_USER_JOURNEY=1` with `UDS_TEST_BINARY=/path/to/uds`. Browser journeys also
 need `PLAYWRIGHT_MODULE=/path/to/node_modules/playwright`. They never deploy a
-real application or use an OS browser with a fake HOME.
+real application or use an OS browser with a fake HOME. The optional matrix SDK
+journey uses `UDS_MATRIX_JOURNEY=1` and `UDS_MATRIX_RUNNER=/path/to/integrated-runner.py`;
+see the integration document for its fixture requirements.
 
 ## License
 

@@ -48,8 +48,18 @@ def main(argv=None):
     commands=parser.add_subparsers(dest='command')
     commands.add_parser('doctor',help='check local prerequisites; change nothing')
     commands.add_parser('capture',help='output-only stdin tee for explicitly wired tasks; never launches UDS')
+    commands.add_parser('publish-run',help='record a private runner snapshot from stdin; never launches a job')
     args=parser.parse_args(argv)
     if args.command=='doctor':return doctor()
+    if args.command=='publish-run':
+        import json
+        import subprocess
+        from .runs import LIMIT, publish
+        try:
+            raw=sys.stdin.buffer.read(LIMIT+1)
+            if len(raw)>LIMIT:raise ValueError('Run record too large')
+            publish(json.loads(raw));return 0
+        except (OSError,ValueError,TypeError,KeyError,subprocess.SubprocessError):return 1
     if args.command=='capture':
         helper=str(Path(__file__).with_name('capture.py'))
         os.execv(sys.executable,[sys.executable,helper])
