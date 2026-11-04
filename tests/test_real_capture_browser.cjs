@@ -25,7 +25,7 @@ function contrast(a,b){const lum=s=>s.match(/[\d.]+/g).slice(0,3).map(Number).ma
   await page.getByRole('button',{name:'← Current tasks',exact:true}).click();await page.waitForTimeout(1200);assert.equal(await page.locator('#deployments-page').isVisible(),true,'Returning to Current tasks stays there across polls');assert.equal(new URL(page.url()).searchParams.has('deployment'),false);
   await page.goBack();await page.waitForSelector('#workspace:visible');await page.waitForSelector('.package-execution');await page.evaluate(()=>document.fonts.ready);
   assert.equal(await page.locator('.uds-brand img:visible').count(),1,'Use the approved UDS branding');assert.equal(await page.locator('.watch-brand').count(),0);
-  assert.equal(await page.locator('.uds-brand-title').innerText(),'Deploy');assert.equal(await page.title(),'UDS Deploy Portal');assert.equal(await page.locator('link[rel="icon"]').getAttribute('href'),'doug.png');
+  assert.equal(await page.locator('.uds-brand-title').innerText(),'Deploy');assert.equal(await page.title(),'UDS Deploy Portal');assert.equal(await page.locator('link[rel="icon"]').getAttribute('href'),'doug.png?v=2');
   assert.equal(await page.locator('#artifact-kind').innerText(),'Bundle');assert.equal(await page.locator('#artifact-kind').getAttribute('data-kind'),'bundle');
   assert.equal(await page.locator('.session-details').count(),0,'Redundant session metadata is not rendered');
   assert.equal(await page.locator('.timing-note').count(),0);assert.ok(await page.locator('.activity-duration').evaluateAll(times=>times.length>0&&times.every(e=>!!e.title)),'Timing explanations remain on duration tooltips');

@@ -2,8 +2,11 @@
 html[data-theme=light] body[data-mode=live] { --status-failed: #c62828; --red: #c62828; }
 html[data-theme=light] body[data-mode=live] .history-status.failed { background: #ffebee; color: var(--status-failed); }
 html[data-theme=light] body[data-mode=live] .status-icon.failed { background: var(--status-failed); border-color: var(--status-failed); color: #fff; }
-html[data-theme=light] body[data-mode=live] :is(.history-status.unknown,.run-status.unknown) { background: #ededed; color: #555; }
-html[data-theme=light] body[data-mode=live] .status-icon.unknown { background: transparent; border-color: #737373; color: #555; }
+html[data-theme=light] body[data-mode=live] :is(.history-status.unknown,.run-status.unknown) { background: #e6e8ec; color: #555e69; }
+html[data-theme=light] body[data-mode=live] .status-icon.unknown { background: transparent; border-color: currentColor; color: #555e69; }
+body[data-mode=live] .history-status.deploying { background: var(--status-running); color: #fff; }
+body[data-mode=live] .history-status.deploying .status-icon { background: transparent; border-color: currentColor; color: inherit; }
+body[data-mode=live] .history-status.deploying .status-icon::after { background: currentColor; }
 #matrix-view { min-width: 0; }
 #matrix-navigation .matrix-run-status { margin-left: 12px; font-size: 10px; }
 .matrix-child-context { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 12px 0 4px; }
@@ -355,8 +358,8 @@ html[data-theme=dark] body[data-mode=live] .status-icon.failed { background: #64
 html[data-theme=dark] body[data-mode=live] :is(.run-status.failed,.package-observation.failed,.step-status-icon.failed,.evidence-badge.failed) { color: #641a25; }
 html[data-theme=dark] body[data-mode=live] .history-status.completed { background: #35b597; color: #003d36; }
 html[data-theme=dark] body[data-mode=live] .history-status.completed .status-icon { background: #003d36; border-color: #003d36; color: #35b597; }
-html[data-theme=dark] body[data-mode=live] .history-status.unknown { background: #414141; color: #e6e6e6; }
-html[data-theme=dark] body[data-mode=live] .status-icon.unknown { background: #2c2c2c; border-color: #a3a3a3; color: #e6e6e6; }
+html[data-theme=dark] body[data-mode=live] .history-status.unknown { background: #343943; color: #d2d8e2; }
+html[data-theme=dark] body[data-mode=live] .status-icon.unknown { background: transparent; border-color: currentColor; color: #d2d8e2; }
 html[data-theme=dark] body[data-mode=live] .summary-title,
 html[data-theme=dark] body[data-mode=live] .activity-heading,
 html[data-theme=dark] body[data-mode=live] .definition-heading,

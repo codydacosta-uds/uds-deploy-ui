@@ -1,6 +1,7 @@
 """Reject any unreviewed drift in the shared deployment viewer UI."""
 import hashlib
 import json
+import struct
 from pathlib import Path
 import unittest
 
@@ -11,6 +12,12 @@ WEB=next(path for path in (ROOT/'src/uds_deploy/web',ROOT/'scripts/uds_deploy/we
 class UIParityTests(unittest.TestCase):
     def test_shared_template_defaults_to_the_approved_watcher(self):
         self.assertIn(b'<body data-mode="live">',(WEB/'index.html').read_bytes(),'Never expose the legacy scheduler UI when a running server serves updated assets')
+    def test_favicon_has_a_square_transparent_canvas(self):
+        image=(WEB/'doug.png').read_bytes()
+        self.assertEqual(image[:8],b'\x89PNG\r\n\x1a\n')
+        self.assertEqual(struct.unpack('>II',image[16:24]),(64,64),'A portrait canvas is stretched by browser favicon rendering')
+        self.assertEqual(image[25],6,'Keep transparent padding, not an opaque square')
+        self.assertIn(b'sizes="64x64" href="doug.png?v=2"',(WEB/'index.html').read_bytes())
     def test_all_shared_assets_match_the_pinned_manifest(self):
         document=json.loads((ROOT/'ui-assets.json').read_text())
         self.assertEqual(document['schema_version'],1)
