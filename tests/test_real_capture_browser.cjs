@@ -17,6 +17,7 @@ function contrast(a,b){const lum=s=>s.match(/[\d.]+/g).slice(0,3).map(Number).ma
   await page.goto(url);await page.waitForSelector('#deployment-rows .deployment-link');await page.waitForTimeout(1200);
   assert.equal(await page.locator('#deployments-page').isVisible(),true,'Current tasks remains the landing page');assert.equal(await page.locator('#workspace').isVisible(),false);assert.equal(new URL(page.url()).searchParams.has('deployment'),false);
   const overviewRow=page.locator('[data-run="'+id+'"]');if(expectDone)assert.match(await overviewRow.locator('.history-status').innerText(),/Done/,'Overview uses the same approved completion evidence as details');
+  assert.ok(await overviewRow.locator('td').evaluateAll(cells=>cells.every(cell=>getComputedStyle(cell).verticalAlign==='baseline')),'Row text aligns to the deployment name first-line baseline');
   assert.equal(await page.locator('.task-target:visible').count(),0);assert.doesNotMatch(await overviewRow.innerText(),/#native-|Local CLI process|See pipeline/);assert.match(await overviewRow.locator('.package-total').innerText(),/\d+ packages?/);
   for(const theme of ['dark','light']){if(await page.locator('html').getAttribute('data-theme')!==theme)await page.locator('#theme-toggle').click();await page.evaluate(()=>document.fonts.ready);await page.screenshot({path:path.join(evidence,theme+'-current-tasks-desktop.png'),fullPage:true});}
   await page.locator('[data-run="'+id+'"] .deployment-link').click();await page.waitForSelector('#workspace:visible');
