@@ -79,6 +79,19 @@ class NativeTests(unittest.TestCase):
             reader=NativeReader();self.addCleanup(reader.close);reader.attach(process)
             self.assertEqual([p['id'] for p in next(iter(reader.sessions.values()))['state']['packages']],['actual-alias'])
         self.assertEqual(native.command_args(['uds','--unknown-arity','deploy','bundle.tar.zst']),[])
+    def test_children_reuse_inventory_without_sharing_package_selection(self):
+        (self.root/'bundle.tar.zst').write_bytes(b'fixture archive')
+        binary=self.root/'uds';binary.write_bytes(b'fixture executable')
+        self.files[-1]['path']=str(binary)
+        self.definition['packages'].append(dict(name='second-alias',ref='2'))
+        with patch('uds_deploy.native.metadata',return_value=(self.definition,{'actual-alias':self.package,'second-alias':self.package})) as decode:
+            for index,alias in enumerate(('actual-alias','second-alias')):
+                self.reader.attach(dict(self.process,pid=os.getpid()+index,args=['uds','deploy','bundle.tar.zst','-p',alias]))
+            self.assertEqual(decode.call_count,1)
+        sessions=list(self.reader.sessions.values())
+        self.assertEqual([[p['id'] for p in session['state']['packages']] for session in sessions],[['actual-alias'],['second-alias']])
+        self.assertEqual([set(session['definitions']) for session in sessions],[{'actual-alias'},{'second-alias'}])
+
     def test_late_attachment_scopes_from_args_and_preserves_original_bytes(self):
         raw=b'2026-11-01 12:00:00 INF performing Helm install chart=podinfo\n  exact CRLF  \r\n\xff\n'
         self.output.write_bytes(raw);self.refresh()

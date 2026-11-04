@@ -429,7 +429,24 @@ def unselected_components(bundle,item,package):
 
 
 class NativeReader:
-    def __init__(self):self.sessions={};self.scanned=0;self.excluded=set();self.capture_wait={}
+    def __init__(self):self.sessions={};self.scanned=0;self.excluded=set();self.capture_wait={};self.metadata_cache=None
+    def artifact_metadata(self,bundle,binary):
+        # One packaged-artifact inventory only, never resolved config or credentials.
+        # Concurrent children use different selectors but share the same archive.
+        def signature():
+            result=[]
+            for path in (Path(bundle),Path(binary)):
+                resolved=path.resolve();info=resolved.stat()
+                result.append((str(resolved),info.st_dev,info.st_ino,info.st_size,info.st_mtime_ns,info.st_ctime_ns))
+            return tuple(result)
+        try:key=signature()
+        except OSError:return metadata(bundle,binary)
+        if self.metadata_cache and self.metadata_cache[0]==key:return deepcopy(self.metadata_cache[1])
+        result=metadata(bundle,binary)
+        try:
+            if signature()==key:self.metadata_cache=(key,deepcopy(result))
+        except OSError:pass  # Never reuse metadata from an artifact replaced during the scan.
+        return result
     def refresh(self):
         if time.monotonic()-self.scanned<.5:return
         self.scanned=time.monotonic();active=processes();active_ids={p['pid'] for p in active}
@@ -485,7 +502,7 @@ class NativeReader:
         path=Path(sources[0]['path'])
         if not stat.S_ISREG(path.stat().st_mode) or path.stat().st_uid!=os.getuid():return
         binary=next((r['path'] for r in records if r.get('fd')=='txt' and Path(r.get('path','')).name in ('uds','zarf')),shutil.which(process['tool']))
-        definition,packages=metadata(bundle,binary)
+        definition,packages=self.artifact_metadata(bundle,binary)
         wanted=None
         if process['tool']=='uds' and verbs[:1] in (['deploy'],['d']):
             # v0.40 uses the first StringArray --packages value, with comma-
