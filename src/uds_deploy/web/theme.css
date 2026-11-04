@@ -90,6 +90,10 @@ body[data-mode=live] .selection-explanation { border: 0; background: transparent
 #not-selected-title { display: inline-flex; align-items: center; gap: 8px; }
 .not-selected-explanation { padding: 16px 18px; }
 .not-selected-explanation p:last-child { margin-bottom: 0; }
+body[data-mode=live] :is(.step-status-icon,.status-icon):is(.failed,.cancelled,.canceled) { position: relative; -webkit-text-fill-color: transparent; }
+body[data-mode=live] :is(.step-status-icon,.status-icon):is(.failed,.cancelled,.canceled)::before,
+body[data-mode=live] :is(.step-status-icon,.status-icon):is(.failed,.cancelled,.canceled)::after { content: ''; position: absolute; top: 50%; left: 50%; width: 55%; height: 2px; border-radius: 1px; background: currentColor; transform: translate(-50%,-50%) rotate(45deg); }
+body[data-mode=live] :is(.step-status-icon,.status-icon):is(.failed,.cancelled,.canceled)::after { transform: translate(-50%,-50%) rotate(-45deg); }
 body[data-mode=live] .step-status-icon.pending { border-color: #9a6700; background: #fdf1d9; color: #9a6700; }
 body[data-mode=live] .step-status-icon.pending::before { content: ''; box-sizing: border-box; width: 6px; height: 7px; border-left: 2px solid currentColor; border-right: 2px solid currentColor; }
 html[data-theme=dark] body[data-mode=live] .step-status-icon.pending { border-color: #f1a32b; background: transparent; color: #f1a32b; }
