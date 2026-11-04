@@ -615,8 +615,9 @@ function renderStockPipeline(){
     section.append(heading);
     const info=p.artifact_info||{},artifact=node('div',undefined,'package-artifact'),version=node('span',info.version||p.version.split('@')[0],'package-version');version.title=info.reference||'Package version';artifact.append(version);
     if(info.has_yaml){const configLabel=info.kind==='ZarfInitConfig'?'Zarf init config':'Zarf package config',yaml=node('button',configLabel,'package-yaml');yaml.setAttribute('aria-label','View '+configLabel);yaml.dataset.focusKey='package-yaml:'+p.id;yaml.onclick=event=>{event.preventDefault();event.stopPropagation();showDefinition(p.id);};artifact.append(yaml);}
+    heading.insertBefore(artifact,heading.querySelector('.package-observation'));
     if(components.length){
-      const board=node('div',undefined,'component-progress-board'),boardHeading=node('div',undefined,'component-progress-heading');board.hidden=components.length===1;const boardLabel=node('h3');boardLabel.append(node('span','Components','hierarchy-pill'));boardHeading.append(boardLabel,artifact);
+      const board=node('div',undefined,'component-progress-board'),boardHeading=node('div',undefined,'component-progress-heading');board.hidden=components.length===1;const boardLabel=node('h3');boardLabel.append(node('span','Components','hierarchy-pill'));boardHeading.append(boardLabel);
       if(active&&componentChoices.has(choiceKey)){const follow=node('button','Follow current component','follow-component');follow.dataset.focusKey='component-follow:'+p.id;follow.onclick=()=>{componentChoices.delete(choiceKey);canvas.dataset.stockKey='';render();};boardHeading.append(follow);}
       const columns=node('div',undefined,'component-overview-columns');for(const text of ['Component','Current / last operation','Status','Elapsed'])columns.append(node('span',text));
       board.append(boardHeading,columns);const list=node('div',undefined,'component-progress-list'),scrollKey=state.id+'/component-progress/'+p.id;list.dataset.scrollKey=scrollKey;list.dataset.choiceKey=choiceKey;list.setAttribute('aria-label',p.name+' component activity');
@@ -631,9 +632,8 @@ function renderStockPipeline(){
         row.onclick=()=>{manualPackages.add(disclosureKey);componentChoices.set(choiceKey,component.id);setDisclosure(componentKey,true);canvas.dataset.stockKey='';render();canvas.querySelector('[data-package="'+CSS.escape(p.id)+'"] [data-component="'+CSS.escape(component.id)+'"]').scrollIntoView({block:'nearest'});if(notSelected)showNotSelected();};list.append(row);
       }
       list.onscroll=()=>{if(list.isConnected&&list.clientHeight)flowScroll.set(scrollKey,list.scrollTop);};board.append(list);section.append(board);
-      requestAnimationFrame(()=>restoreComponentScroll(list));if(components.length===1)heading.insertBefore(artifact,heading.querySelector('.package-observation'));
+      requestAnimationFrame(()=>restoreComponentScroll(list));
     }
-    else{const meta=node('div',undefined,'package-info');meta.append(artifact);section.append(meta);}
     if(components.length&&!chosen)section.append(node('p','Select a component above to inspect its activity and packaged resources.','component-selection-hint'));
     for(const component of components){
       const componentKey=state.id+'/component-detail/'+p.id+'/'+component.id,row=node('details',undefined,'component-execution');row.dataset.component=component.id;row.hidden=component.id!==chosen;row.dataset.disclosure=componentKey;row.open=components.length===1?true:disclosure.has(componentKey)?disclosure.get(componentKey):true;row.dataset.inline=String(components.length===1);
