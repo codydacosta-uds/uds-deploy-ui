@@ -50,6 +50,8 @@ body[data-mode=live] .image-transfer-note { color: #626b76; }
 /* Compact spacing without reducing text, status circles, or control legibility. */
 body[data-mode=live] main { padding: 16px 28px; }
 body[data-mode=live] .topbar { height: 68px; }
+.current-tasks-link { display: none; }
+body[data-mode=live] .current-tasks-link { display: inline-flex; margin-bottom: 10px; padding: 0; border: 0; background: transparent; color: var(--theme-link,#1f5fa9); font-size: 12px; }
 body[data-mode=live] .package-execution { margin-bottom: 8px; border-radius: 8px; }
 body[data-mode=live] .component-execution { padding: 8px 10px; }
 body[data-mode=live] .component-execution[open] > .component-detail-heading { margin-bottom: 8px; }

@@ -84,6 +84,9 @@ be available. Arbitrary commands and scripts are not automatically recorded.
 - Captures are temporary. An attached viewer holds finished logs until it
   closes; download them first if you want to keep them. Restarting the viewer
   changes its URL and loses those held captures.
+- The viewer opens on **Current tasks**, a live overview that stays put until
+  you open a deployment. Use **← Current tasks** to return; explicit deployment
+  URLs still open directly into their detail view.
 - Component rows show the current/last operation, status and elapsed time; click
   a row for individual steps. Package/component/operation timing uses SDK log
   clocks, not watcher attachment time. `~` marks estimated spans; `—` means timing

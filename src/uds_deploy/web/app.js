@@ -76,7 +76,7 @@ function renderHistory(){
   $('deployment-total').textContent=discoveredRuns.length;
   $('deployment-table-scroll').hidden=items.length===0;
   $('history-empty').hidden=discoveredRuns.length!==0;$('history-note').textContent=liveOnly?'Current local tasks only. No database, saved deployment history, or UI-owned retries.':`${items.length} of ${discoveredRuns.length} saved runs · latest 50 shown. Start deployments from the terminal.`;
-  const key=JSON.stringify([discoveredRuns,search,filter]);
+  const key=JSON.stringify([items.map(item=>[item.id,item.status,item.bundle_name,item.version,item.environment,item.target,item.created_at,item.package_counts,item.package_count,item.unverified_operations]),search,filter]);
   if(key!==historyKey){
     historyKey=key;const rows=document.createDocumentFragment();
     for(const item of items){
@@ -113,7 +113,6 @@ async function discover(){
     const processes=await request(new URL('api/processes',location.href).pathname);
     $('processes').replaceChildren();
     for(const process of processes)$('processes').append(node('p',`${process.tool} ${process.kind} · PID ${process.pid} · process detected; detail available only for task-captured output.`));
-    if(initialRoute&&!new URL(location.href).searchParams.has('deployment')&&runs.length){initialRoute=false;await chooseRun((runs.find(r=>r.status==='deploying')||runs[0]).id,false);}
   }
   if(!runs.length){$('connection').textContent='Local viewer ready';$('connection').className=liveOnly?'live':'';return;}
   const key=runs.map(r=>`${r.id}:${r.status}`).join('|');
@@ -993,7 +992,7 @@ if(liveOnly){
   $('log-status').textContent='Original output retained.';
   document.title='UDS Deploy Portal';
 }
-$('nav-deployments').onclick=$('breadcrumb-home').onclick=()=>showPage('history',true);
+$('nav-deployments').onclick=$('breadcrumb-home').onclick=$('current-tasks').onclick=()=>showPage('history',true);
 $('nav-pipeline').onclick=()=>{if(state)showPage('pipeline',true);};
 $('deployment-search').oninput=renderHistory;$('deployment-status').onchange=renderHistory;
 for(const [id,mode]of [['stage-grouping','stages'],['dependency-grouping','dependencies']])$(id).onclick=()=>{grouping=mode;renderPipeline();};

@@ -12,7 +12,7 @@ function fixture(runs=[active,old]){
   $:element,node:()=>({}),renderHistory(){},updateActiveLink(){},notice:message=>notices.push(message),
   request:async url=>url.endsWith('/processes')?[]:runs,
   chooseRun:async(id,navigate)=>{chosen.push({id,navigate});context.run=id;context.state=runs.find(r=>r.id===id);},
-  refreshState:async()=>{},showPage(){}});
+  refreshState:async()=>{},showPage(view){context.pageView=view;}});
  vm.runInContext("'use strict';\n"+source.slice(begin,end),context);
  return {context,chosen,notices};
 }
@@ -45,7 +45,9 @@ function fixture(runs=[active,old]){
  const empty=fixture([]);empty.context.initialRoute=true;empty.context.state=null;empty.context.run=null;await empty.context.discover();
  assert.equal(empty.context.initialRoute,true,'An empty watcher remains ready for its first deployment');
  empty.context.request=async url=>url.endsWith('/processes')?[]:[active];await empty.context.discover();
- assert.equal(empty.chosen[0].id,'new');assert.equal(empty.context.initialRoute,false);
+ assert.deepEqual(empty.chosen,[],'A newly discovered deployment appears in Current tasks without opening it');assert.equal(empty.context.initialRoute,false);assert.equal(empty.context.pageView,'history');
+ const landing=fixture();Object.assign(landing.context,{initialRoute:true,pageView:'history',run:null,state:null});await landing.context.discover();await landing.context.discover();assert.deepEqual(landing.chosen,[],'The populated landing page stays put across discovery polls');assert.equal(landing.context.pageView,'history');
+ const linked=fixture();Object.assign(linked.context,{initialRoute:true,pageView:'history',run:null,state:null});linked.context.location.href+='?deployment=new';await linked.context.discover();assert.deepEqual(linked.chosen,[{id:'new',navigate:false}],'An explicit deployment URL still opens its detail view');
  assert.match(source,/setInterval\(discover,liveOnly\?1000:5000\)/,'Live discovery polls each second without changing legacy viewers');
- console.log('Discovery policy passed: one-second polling, next-run following, manual pinning, concurrency safety, bounded requests and empty-start detection.');
+ console.log('Discovery policy passed: one-second polling, next-run following, manual pinning, concurrency safety, bounded requests, stable Current tasks landing and explicit deep links.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

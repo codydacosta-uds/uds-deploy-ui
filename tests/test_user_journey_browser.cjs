@@ -13,7 +13,11 @@ async function until(test,message,timeout=25000){const deadline=Date.now()+timeo
   // Keep Playwright's default launch flags, including its mock Keychain flags.
   browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:1600,height:1100}});
   const errors=[],writes=[];page.on('pageerror',e=>errors.push(e.message));page.on('request',request=>{if(!['GET','HEAD'].includes(request.method()))writes.push(request.method());});
-  await page.goto(event.url);
+  await page.goto(event.url);await page.waitForSelector('#deployments-page:visible');
+  await page.waitForFunction(pid=>discoveredRuns.some(r=>r.source?.pid===pid),manifest.deploy_pid);
+  const chosenRun=await page.evaluate(pid=>discoveredRuns.find(r=>r.source?.pid===pid).id,manifest.deploy_pid);
+  await page.screenshot({path:path.join(manifest.evidence,manifest.shell+'-00-current-tasks.png'),fullPage:true});
+  await page.locator('[data-run="'+chosenRun+'"] .deployment-link').click();
   await page.waitForSelector('.package-execution');await page.waitForFunction(pid=>state?.source?.pid===pid,manifest.deploy_pid);
   assert.ok(manifest.deploy_started_before_viewer,'Deployment must precede viewer startup');
   const logo=page.locator('.uds-brand img:visible');assert.equal(await logo.count(),1);assert.equal(await logo.evaluate(e=>e.complete&&e.naturalWidth>0),true);assert.equal(await logo.getAttribute('src'),'uds-logo.png');
@@ -80,6 +84,7 @@ async function until(test,message,timeout=25000){const deadline=Date.now()+timeo
   assert.equal(await discovery.evaluate(()=>state.id),next.id,'Concurrent active runs do not steal focus');
   next.status='unknown';next.completed_at=finished.completed_at;
   await discovery.waitForFunction(id=>state?.id===id,third.id,{timeout:4000});
+  await discovery.waitForFunction(()=>document.querySelector('#connection').classList.contains('live'));
   for(const theme of ['light','dark']){
    if(await discovery.locator('html').getAttribute('data-theme')!==theme)await discovery.locator('#theme-toggle').click();
    for(const width of [390,1600]){
@@ -89,6 +94,11 @@ async function until(test,message,timeout=25000){const deadline=Date.now()+timeo
     assert.ok(await discovery.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
    }
   }
+  await discovery.getByRole('button',{name:'← Current tasks',exact:true}).click();await discovery.waitForSelector('#deployments-page:visible');
+  const row=await discovery.locator('[data-run="'+third.id+'"] .deployment-link').elementHandle();await row.focus();third.cursor=(third.cursor||0)+1;
+  await discovery.evaluate(()=>discover());assert.equal(await row.evaluate(e=>e.isConnected&&document.activeElement===e),true,'Unrelated log-cursor updates keep overview rows/focus intact');
+  inventory=[{...third,id:'fixture-fourth-run',created_at:third.created_at+1},...inventory];await discovery.evaluate(()=>discover());await sleep(1200);
+  assert.equal(await discovery.locator('#deployments-page').isVisible(),true,'New deployments update the overview without navigating away');assert.equal(new URL(discovery.url()).searchParams.has('deployment'),false);
   await discovery.close();assert.deepEqual(errors,[]);assert.deepEqual(writes,[]);
   console.log('Isolated discovery UI fixtures passed: next-run auto-follow, manual pinning, concurrency safety, light/dark desktop/mobile.');
   fs.writeFileSync(path.join(manifest.evidence,manifest.shell+'-result.json'),JSON.stringify({capture_mode:manifest.capture_mode||'hook',cli_browser_handoff_verified:true,browser_launched_by_playwright:true,os_default_browser_tested:false,deploy_started_before_viewer:true,late_attach_full_output:true,live_transition:true,native_exit:0,download_byte_exact:true,read_only:true,synthetic_discovery_fixtures_verified:true},null,2));
