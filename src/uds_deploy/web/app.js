@@ -586,7 +586,6 @@ function renderStockPipeline(){
   if(!matrixParent&&lanes.childElementCount)canvas.append(lanes);
   canvas.append(matrixParent?matrixNavigation(matrixParent,actions):banner);
   if(matrixParent){
-    renderMatrix(matrixParent);
     const job=matrixParent.matrix.jobs.find(job=>job.child_run_id===state.id),context=node('div',undefined,'matrix-child-context');context.dataset.selectedMatrixJob=job?.id||'';
     context.append(node('h2','Selected job · '+(job?matrixJobLabel(job):'Captured invocation'),'packages-heading'));
     for(const control of $('target').querySelectorAll('.session-yaml,.cluster-connection'))context.append(control);
@@ -646,12 +645,12 @@ function renderStockPipeline(){
         row.onclick=()=>{manualPackages.add(disclosureKey);componentChoices.set(choiceKey,component.id);setDisclosure(componentKey,true);canvas.dataset.stockKey='';render();canvas.querySelector('[data-package="'+CSS.escape(p.id)+'"] [data-component="'+CSS.escape(component.id)+'"]').scrollIntoView({block:'nearest'});if(notSelected)showNotSelected();};list.append(row);
       }
       list.onscroll=()=>{if(list.isConnected&&list.clientHeight)flowScroll.set(scrollKey,list.scrollTop);};board.append(list);section.append(board);
-      requestAnimationFrame(()=>restoreComponentScroll(list));
     }
     if(components.length&&!chosen)section.append(node('p','Select a component above to inspect its activity and packaged resources.','component-selection-hint'));
     for(const component of components){
       const componentKey=state.id+'/component-detail/'+p.id+'/'+component.id,row=node('details',undefined,'component-execution');row.dataset.component=component.id;row.hidden=component.id!==chosen;row.dataset.disclosure=componentKey;row.open=components.length===1?true:disclosure.has(componentKey)?disclosure.get(componentKey):true;row.dataset.inline=String(components.length===1);
       const expandedAtRender=row.open;row.ontoggle=()=>{if(row.isConnected){disclosure.set(componentKey,row.open);if(component.id===chosen&&row.open!==expandedAtRender){manualPackages.add(disclosureKey);canvas.dataset.stockKey='';render();}}};
+      row.addEventListener('click',()=>{componentChoices.set(choiceKey,component.id);manualPackages.add(disclosureKey);},{capture:true});
       row.id=componentKey;row.setAttribute('aria-label',p.name+' / '+component.id+' activity');const componentHeading=node('summary',undefined,'component-detail-heading');componentHeading.append(node('span','Component','hierarchy-pill'),node('span',component.id,'component-name'));componentHeading.hidden=components.length===1;row.append(componentHeading);
       if(components.length===1){const identity=node('div',undefined,'component-identity');identity.append(node('span','Component','hierarchy-pill'),node('span',component.id,'component-name'),durationNode(scopeTiming('component.start',component.id,p.id,reports,state,active&&activeComponent===component.id,component)));row.append(identity);}
       const content=node('div',undefined,'component-activity');
@@ -693,6 +692,10 @@ function renderStockPipeline(){
     if(!components.length)section.append(node('p','Component definitions are not available from this output source.','unobserved-component'));
     canvas.append(section);
   }
+  // Restore/measure only after the full timeline is back. A partial rebuild
+  // can reset saved list positions or clamp a scrolled page to the top.
+  for(const list of canvas.querySelectorAll('.component-progress-list'))restoreComponentScroll(list);
+  if(matrixParent)renderMatrix(matrixParent);
   if(!running)finishedViews.add(state.id);
 }
 function renderPipeline(){
