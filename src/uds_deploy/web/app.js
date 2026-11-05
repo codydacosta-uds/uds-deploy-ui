@@ -387,25 +387,32 @@ function reportedPackageState(pkg,reports,active){
 function inferredRunCompletion(snapshot){
   if(snapshot.source?.kind!=='stock-process'||snapshot.source.output_complete!==true||snapshot.source.activity_available===false||!snapshot.completed_at||['waiting','deploying','failed'].includes(snapshot.status)||!(snapshot.packages||[]).length)return false;
   if((snapshot.checks||[]).some(c=>c.current_deployment&&c.status==='failed'))return false;
-  const reports=inferSequentialCompletion(snapshot,scopeImageReports(snapshot.reports||[]));
+  const reports=inferSequentialCompletion(snapshot,scopeImageReports(snapshot.reports||[],snapshot));
   if(reports.some(r=>r.kind==='deployment.error'||r.message==='action failed'))return false;
   return snapshot.packages.every(pkg=>reportedPackageState(pkg,reports.filter(r=>r.definition_owner?.package===pkg.id),false).state==='succeeded');
 }
 function showPackageConnectors(layout,mode,activeCount,packageCount){
   return layout==='pipeline'&&mode==='observed'&&packageCount>1&&activeCount<=1;
 }
-function scopeImageReports(reports){
-  // Older attached readers left the SDK's resource-less completion unassigned.
-  // Project only explicit component-start + same-owner push + completion evidence.
-  return reports.map(report=>{
-    if(report.kind!=='images.push'||report.message!=='done pushing images'||report.definition_owner)return report;
+function scopeImageReports(reports,snapshot=null){
+  // Project explicit CLI image-batch evidence without changing captured reports.
+  const scoped=new Map(),single=snapshot?.source?.kind==='stock-process'&&snapshot.source.output_complete===true&&snapshot.source.single_cli===true&&snapshot.source.activity_available!==false&&snapshot.mode==='observed'&&(snapshot.packages||[]).filter(p=>p.status==='deploying').length<=1;
+  for(const report of reports){
+    if(report.kind!=='images.push'||report.message!=='done pushing images'||report.definition_owner)continue;
     const starts=reports.filter(r=>['package.start','component.start'].includes(r.kind)&&r.timestamp<=report.timestamp);
     const boundary=starts.reduce((a,b)=>!a||b.timestamp>=a.timestamp?b:a,null),owner=boundary?.kind==='component.start'?boundary.definition_owner:null;
-    if(!owner?.component)return report;
+    if(!owner?.component)continue;
     const pushes=reports.filter(r=>r.kind==='images.push'&&['pushing image','image push in progress'].includes(r.message)&&r.timestamp>=boundary.timestamp&&r.timestamp<=report.timestamp);
-    if(!pushes.length||!pushes.every(r=>r.definition_owner?.package===owner.package&&r.definition_owner?.component===owner.component))return report;
-    return {...report,definition_owner:owner,scope_evidence:'explicit-cli-component-start-and-image-pushes'};
-  });
+    const pkg=starts.filter(r=>r.kind==='package.start').reduce((a,b)=>!a||b.timestamp>=a.timestamp?b:a,null),prefix=pkg?.definition_owner?.package===owner.package&&pkg.resource?'zarf.internal/sbom/'+pkg.resource+':':null;
+    const owned=r=>r.definition_owner?.package===owner.package&&r.definition_owner?.component===owner.component;
+    const sbom=r=>single&&!r.definition_owner&&prefix&&r.resource?.startsWith(prefix)&&r.resource.length>prefix.length;
+    // Zarf adds its own SBOM image outside the component's declared image list.
+    // Require its exact package name, owned image pushes and batch completion.
+    if(!pushes.some(owned)||!pushes.every(r=>owned(r)||sbom(r)))continue;
+    scoped.set(report,{definition_owner:owner,scope_evidence:'explicit-cli-component-start-and-image-pushes'});
+    for(const push of pushes.filter(sbom))scoped.set(push,{definition_owner:{...owner,evidence:'explicit-cli-image-batch'},scope_evidence:'explicit-single-cli-generated-sbom-batch'});
+  }
+  return reports.map(report=>scoped.has(report)?{...report,...scoped.get(report)}:report);
 }
 // Lexical colors for the viewer's normalized JSON-compatible YAML, not a YAML parser.
 // Unrecognized syntax and the tail of very large documents stay visible as plain text.
@@ -463,7 +470,7 @@ function renderStockPipeline(){
   const key=JSON.stringify([state.id,matrixParent?.id,state.status,state.completed_at,state.mode,state.source,state.reports,state.checks,inspectorOpen,document.body.dataset.outputFocus,state.artifact_info,state.packages,packageLayout,pipelineSelection,state.packages.map(p=>componentChoices.get(state.id+'/'+p.id)),[...stepChoices],quietFinished]);
   if(canvas.dataset.stockKey===key){if(matrixParent)renderMatrix(matrixParent);return;}canvas.dataset.stockKey=key;canvas.dataset.matrixRunKey='';
   canvas.replaceChildren();
-  const reports=inferSequentialCompletion(state,scopeImageReports(state.reports||[])),errors=reports.filter(r=>r.message==='action failed'||r.kind==='deployment.error'),latest=reports.reduce((last,item)=>!last||item.timestamp>last.timestamp?item:last,null);
+  const reports=inferSequentialCompletion(state,scopeImageReports(state.reports||[],state)),errors=reports.filter(r=>r.message==='action failed'||r.kind==='deployment.error'),latest=reports.reduce((last,item)=>!last||item.timestamp>last.timestamp?item:last,null);
   function openOutput(focus,context,activity=null){
     full=true;rawMode=true;inspectorOpen=true;clearScope();clearTimeout(searchTimer);$('log-search').value='';$('log-level').value='';document.body.dataset.outputFocus=focus;document.body.dataset.outputContext=context;
     if(!activity){logAnchorId=null;logAnchorLabel='';}render();(activity?loadActivityLogs(activity.items,activity.label):loadLogs()).catch(e=>notice(e.message));$('job-inspector').scrollIntoView({block:'nearest'});

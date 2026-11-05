@@ -127,6 +127,17 @@ assert.equal(scope([push,done])[1].definition_owner,undefined,'A later operation
 assert.equal(scope([begin,done])[1].definition_owner,undefined,'No pushes means no ownership proof');
 assert.equal(scope([begin,{...push,definition_owner:undefined},done])[2].definition_owner,undefined,'Ambiguous pushes stay unverified');
 assert.equal(scope([begin,push,report('package.start','starting deploy',2.5),done])[3].definition_owner,undefined,'A new package clears previous component scope');
+const sbomPackage={...report('package.start','starting deploy',.5,'image-package'),definition_owner:{package:'pkg1'}};
+const sbom={...report('images.push','pushing image',2.5,'zarf.internal/sbom/image-package:1.2.3')};
+const sbomReports=[sbomPackage,begin,push,sbom,done],singleSbom={...seq,source:{...seq.source,single_cli:true}};
+const rawSbom=JSON.stringify(sbomReports),sbomScoped=scope(sbomReports,singleSbom);
+assert.equal(sbomScoped[3].definition_owner.component,'app');assert.equal(sbomScoped[3].definition_owner.evidence,'explicit-cli-image-batch');assert.equal(sbomScoped[4].definition_owner.package,'pkg1');assert.equal(JSON.stringify(sbomReports),rawSbom,'SBOM projection never rewrites captured observations');
+for(const snapshot of [null,seq,{...singleSbom,mode:'concurrent'},{...singleSbom,mode:'parallel'},{...singleSbom,source:{...singleSbom.source,output_complete:false}},{...singleSbom,source:{...singleSbom.source,single_cli:false}},{...singleSbom,source:{...singleSbom.source,activity_available:false}},{...singleSbom,packages:[{status:'deploying'},{status:'deploying'}]}])assert.equal(scope(sbomReports,snapshot)[4].definition_owner,undefined,'Generated SBOM exception requires a complete single sequential CLI');
+for(const resource of ['zarf.internal/sbom/other-package:1','zarf.internal/sbom/image-package:','registry/image-package:1'])assert.equal(scope([sbomPackage,begin,push,{...sbom,resource},done],singleSbom)[4].definition_owner,undefined,'An unrelated/unrecognized image must keep the batch unconfirmed');
+assert.equal(scope([begin,push,sbom,done],singleSbom)[3].definition_owner,undefined,'A component alone cannot identify the generated package SBOM');
+assert.equal(scope([sbomPackage,begin,sbom,done],singleSbom)[3].definition_owner,undefined,'A generated image alone cannot establish a component image batch');
+assert.equal(scope(sbomReports.slice(0,-1),singleSbom)[3].definition_owner,undefined,'No batch-complete report means no generated-SBOM completion projection');
+assert.equal(scope([sbomPackage,begin,push,{...sbom,definition_owner:{package:'other',component:'other'}},done],singleSbom)[4].definition_owner,undefined,'Never override a conflicting image owner');
 // Labeled policy regression: only owned package states can establish parallel
 // activity. A single native console focus never marks every package running.
 const activeStart=source.indexOf('function activePackageIds('),activeEnd=source.indexOf('\n}',activeStart)+2;
@@ -191,6 +202,13 @@ assert.equal(runDone({...ended,reports:[...healthReports,error]}),false);
 assert.equal(runDone({...ended,reports:healthReports,checks:[{current_deployment:true,status:'failed'}]}),false);
 assert.equal(infer({...ended,checks:[{current_deployment:true,status:'failed'}]},healthReports)[3].inferred_complete,undefined);
 assert.equal(runDone({...ended,reports:[pkgA]}),false,'Process exit without health/work evidence remains unknown');
+const sbomFinal=[{...pkgA,resource:'image-package'},componentStart,{...push,id:'image',timestamp:2.1,definition_owner:finalOwner},{...sbom,id:'sbom',timestamp:2.2},{...done,id:'images-done',timestamp:2.3},{...upgrade,timestamp:3,definition_owner:finalOwner},finalAction];
+const sbomEnded={...ended,source:{...ended.source,single_cli:true},reports:sbomFinal};
+assert.equal(runDone(sbomEnded),true,'Generated SBOM does not block a complete batch followed by successful final validation');
+assert.equal(runDone({...sbomEnded,reports:sbomFinal.filter(r=>r.id!=='images-done')}),false,'A final action alone cannot complete an unfinished image batch');
+assert.equal(runDone({...sbomEnded,reports:[...sbomFinal,{...error,timestamp:5.5}]}),false);
+assert.equal(runDone({...sbomEnded,checks:[{current_deployment:true,status:'failed'}]}),false);
+assert.equal(runDone({...sbomEnded,mode:'parallel'}),false);
 const taskStart=source.indexOf('function taskStatus('),taskEnd=source.indexOf('\n}',taskStart)+2,task=vm.runInNewContext('('+source.slice(taskStart,taskEnd)+')',{inferredRunCompletion:runDone,title:value=>value?value[0].toUpperCase()+value.slice(1):'Unknown'});
 assert.equal(task({...ended,reports:healthReports}).label,'Done','The overview must agree with approved detail completion');assert.equal(ended.status,'unknown','Keep raw outcome unchanged');
 for(const [status,label] of [['completed','Done'],['deploying','Running'],['waiting','Pending'],['pending','Pending'],['failed','Failed']])assert.equal(task({status}).label,label);
